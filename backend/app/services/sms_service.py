@@ -5,7 +5,7 @@ Ready for future integration with Twilio, Africa's Talking, etc.
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +24,7 @@ async def send_sms(phone_number: str, message: str) -> bool:
     Returns:
         True (always succeeds in mock mode)
     """
-    timestamp = datetime.utcnow().isoformat()
+    timestamp = datetime.now(timezone.utc).isoformat()
 
     # Log the SMS
     log_entry = {

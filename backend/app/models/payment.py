@@ -1,6 +1,6 @@
 from sqlmodel import SQLModel, Field, Relationship
 from typing import Optional, TYPE_CHECKING
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from enum import Enum
 import uuid
 
@@ -47,8 +47,8 @@ class Payment(SQLModel, table=True):
     is_manual: bool = Field(default=False)  # True for one-off charges
 
     # Timestamps
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     # Relationships
     tenant: Optional["Tenant"] = Relationship(back_populates="payments")

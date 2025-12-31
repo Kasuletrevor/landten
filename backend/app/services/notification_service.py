@@ -5,7 +5,7 @@ In-app notification service using Server-Sent Events (SSE).
 import asyncio
 import json
 from typing import Dict, Set, AsyncGenerator
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlmodel import Session
 
 from app.models.notification import Notification, NotificationType
@@ -43,7 +43,7 @@ async def subscribe(landlord_id: str) -> AsyncGenerator[str, None]:
             except asyncio.TimeoutError:
                 # Send keep-alive ping
                 yield format_sse_event(
-                    "ping", {"timestamp": datetime.utcnow().isoformat()}
+                    "ping", {"timestamp": datetime.now(timezone.utc).isoformat()}
                 )
     finally:
         # Cleanup on disconnect

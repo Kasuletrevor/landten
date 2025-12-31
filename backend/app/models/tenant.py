@@ -1,6 +1,6 @@
 from sqlmodel import SQLModel, Field, Relationship
 from typing import Optional, List, TYPE_CHECKING
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 import uuid
 
 if TYPE_CHECKING:
@@ -23,8 +23,8 @@ class Tenant(SQLModel, table=True):
     move_out_date: Optional[date] = None
     is_active: bool = Field(default=True)
     notes: Optional[str] = None
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     # Relationships
     room: Optional["Room"] = Relationship(back_populates="tenants")

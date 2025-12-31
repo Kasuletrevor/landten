@@ -3,7 +3,7 @@ Payment generation and status update service.
 Handles auto-generating payments based on schedules.
 """
 
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from dateutil.relativedelta import relativedelta
 from sqlmodel import Session, select
 from typing import Optional, List
@@ -210,7 +210,7 @@ def update_payment_statuses(session: Session) -> int:
 
         if new_status != payment.status:
             payment.status = new_status
-            payment.updated_at = datetime.utcnow()
+            payment.updated_at = datetime.now(timezone.utc)
             session.add(payment)
             updated_count += 1
 

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
 from typing import Optional
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 
 from app.core.database import get_session
 from app.core.security import get_current_landlord
@@ -275,7 +275,7 @@ async def update_tenant(
     if update_data.notes is not None:
         tenant.notes = update_data.notes
 
-    tenant.updated_at = datetime.utcnow()
+    tenant.updated_at = datetime.now(timezone.utc)
     session.add(tenant)
     session.commit()
     session.refresh(tenant)
@@ -310,7 +310,7 @@ async def move_out_tenant(
     # Update tenant
     tenant.is_active = False
     tenant.move_out_date = move_out_data.move_out_date
-    tenant.updated_at = datetime.utcnow()
+    tenant.updated_at = datetime.now(timezone.utc)
 
     # Deactivate payment schedule
     schedule = session.exec(
@@ -450,7 +450,7 @@ async def update_tenant_schedule(
     if update_data.is_active is not None:
         schedule.is_active = update_data.is_active
 
-    schedule.updated_at = datetime.utcnow()
+    schedule.updated_at = datetime.now(timezone.utc)
     session.add(schedule)
     session.commit()
     session.refresh(schedule)

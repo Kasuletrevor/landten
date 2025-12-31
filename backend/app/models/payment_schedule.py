@@ -1,6 +1,6 @@
 from sqlmodel import SQLModel, Field, Relationship
 from typing import Optional, TYPE_CHECKING
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from enum import Enum
 import uuid
 
@@ -31,8 +31,8 @@ class PaymentSchedule(SQLModel, table=True):
     )  # Days after due_day payment is accepted on time
     start_date: date  # When this schedule begins
     is_active: bool = Field(default=True)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     # Relationships
     tenant: Optional["Tenant"] = Relationship(back_populates="payment_schedule")

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlmodel import Session, select
 from typing import Optional, List
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from dateutil.relativedelta import relativedelta
 
 from app.core.database import get_session
@@ -203,7 +203,7 @@ async def list_payments(
         new_status = update_payment_status(payment, today)
         if new_status != payment.status:
             payment.status = new_status
-            payment.updated_at = datetime.utcnow()
+            payment.updated_at = datetime.now(timezone.utc)
             session.add(payment)
 
         # Apply status filter
@@ -265,7 +265,7 @@ async def get_payment_summary(
         new_status = update_payment_status(payment, today)
         if new_status != payment.status:
             payment.status = new_status
-            payment.updated_at = datetime.utcnow()
+            payment.updated_at = datetime.now(timezone.utc)
             session.add(payment)
 
         if payment.status == PaymentStatus.UPCOMING:
@@ -356,7 +356,7 @@ async def get_overdue_payments(
     for payment in payments:
         if payment.status != PaymentStatus.OVERDUE:
             payment.status = PaymentStatus.OVERDUE
-            payment.updated_at = datetime.utcnow()
+            payment.updated_at = datetime.now(timezone.utc)
             session.add(payment)
 
     session.commit()
@@ -381,7 +381,7 @@ async def get_payment(
     new_status = update_payment_status(payment, today)
     if new_status != payment.status:
         payment.status = new_status
-        payment.updated_at = datetime.utcnow()
+        payment.updated_at = datetime.now(timezone.utc)
         session.add(payment)
         session.commit()
 
@@ -422,7 +422,7 @@ async def mark_payment_paid(
     payment.payment_reference = paid_data.payment_reference
     if paid_data.notes:
         payment.notes = paid_data.notes
-    payment.updated_at = datetime.utcnow()
+    payment.updated_at = datetime.now(timezone.utc)
 
     session.add(payment)
     session.commit()
@@ -456,7 +456,7 @@ async def waive_payment(
     payment.status = PaymentStatus.WAIVED
     if waive_data.notes:
         payment.notes = waive_data.notes
-    payment.updated_at = datetime.utcnow()
+    payment.updated_at = datetime.now(timezone.utc)
 
     session.add(payment)
     session.commit()
@@ -484,7 +484,7 @@ async def update_payment(
     if update_data.notes is not None:
         payment.notes = update_data.notes
 
-    payment.updated_at = datetime.utcnow()
+    payment.updated_at = datetime.now(timezone.utc)
     session.add(payment)
     session.commit()
     session.refresh(payment)

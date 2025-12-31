@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select, func
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone
 
 from app.core.database import get_session
 from app.core.security import get_current_landlord
@@ -139,7 +139,7 @@ async def update_property(
     if update_data.description is not None:
         property.description = update_data.description
 
-    property.updated_at = datetime.utcnow()
+    property.updated_at = datetime.now(timezone.utc)
     session.add(property)
     session.commit()
     session.refresh(property)
