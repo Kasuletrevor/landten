@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime, timezone
 
 from app.core.database import get_session
@@ -15,6 +15,9 @@ from app.schemas.room import (
     RoomResponse,
     RoomWithTenant,
     RoomListResponse,
+    BulkRoomCreate,
+    BulkRoomResponse,
+    PriceRange,
 )
 
 router = APIRouter(prefix="/properties/{property_id}/rooms", tags=["Rooms"])
@@ -79,6 +82,7 @@ async def create_room(
         property_id=property_id,
         name=room_data.name,
         rent_amount=room_data.rent_amount,
+        currency=room_data.currency,
         description=room_data.description,
     )
     session.add(room)
@@ -141,6 +145,8 @@ async def update_room(
         room.name = update_data.name
     if update_data.rent_amount is not None:
         room.rent_amount = update_data.rent_amount
+    if update_data.currency is not None:
+        room.currency = update_data.currency
     if update_data.description is not None:
         room.description = update_data.description
 
@@ -182,3 +188,140 @@ async def delete_room(
 
     session.delete(room)
     session.commit()
+
+
+# Maximum rooms per bulk creation
+MAX_BULK_ROOMS = 500
+
+
+def find_price_for_room_number(
+    room_number: int, price_ranges: List[PriceRange]
+) -> Optional[float]:
+    """Find the price for a given room number from the price ranges."""
+    for pr in price_ranges:
+        if pr.from_number <= room_number <= pr.to_number:
+            return pr.rent_amount
+    return None
+
+
+def find_coverage_gaps(
+    from_number: int, to_number: int, price_ranges: List[PriceRange]
+) -> List[tuple]:
+    """Find gaps in price range coverage."""
+    covered = set()
+    for pr in price_ranges:
+        for num in range(pr.from_number, pr.to_number + 1):
+            if from_number <= num <= to_number:
+                covered.add(num)
+
+    all_numbers = set(range(from_number, to_number + 1))
+    uncovered = sorted(all_numbers - covered)
+
+    if not uncovered:
+        return []
+
+    # Group consecutive numbers into ranges
+    gaps = []
+    gap_start = uncovered[0]
+    gap_end = uncovered[0]
+
+    for num in uncovered[1:]:
+        if num == gap_end + 1:
+            gap_end = num
+        else:
+            gaps.append((gap_start, gap_end))
+            gap_start = num
+            gap_end = num
+
+    gaps.append((gap_start, gap_end))
+    return gaps
+
+
+@router.post(
+    "/bulk", response_model=BulkRoomResponse, status_code=status.HTTP_201_CREATED
+)
+async def create_rooms_bulk(
+    property_id: str,
+    bulk_data: BulkRoomCreate,
+    current_landlord: Landlord = Depends(get_current_landlord),
+    session: Session = Depends(get_session),
+):
+    """
+    Create multiple rooms at once with optional price ranges.
+
+    - Maximum 500 rooms per operation
+    - Supports prefix and zero-padding for room names
+    - Allows different prices for different room number ranges
+    """
+    verify_property_ownership(property_id, current_landlord.id, session)
+
+    # Validate total rooms
+    total_rooms = bulk_data.to_number - bulk_data.from_number + 1
+    if total_rooms > MAX_BULK_ROOMS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Maximum {MAX_BULK_ROOMS} rooms per bulk creation. You requested {total_rooms}.",
+        )
+
+    if total_rooms < 1:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid room range.",
+        )
+
+    # Validate price ranges are within overall range
+    for pr in bulk_data.price_ranges:
+        if pr.from_number < bulk_data.from_number or pr.to_number > bulk_data.to_number:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Price range {pr.from_number}-{pr.to_number} is outside overall range {bulk_data.from_number}-{bulk_data.to_number}.",
+            )
+
+    # Find gaps in coverage
+    warnings = []
+    gaps = find_coverage_gaps(
+        bulk_data.from_number, bulk_data.to_number, bulk_data.price_ranges
+    )
+    for gap_start, gap_end in gaps:
+        if gap_start == gap_end:
+            warnings.append(f"Room {gap_start} has no price assigned.")
+        else:
+            warnings.append(f"Rooms {gap_start}-{gap_end} have no price assigned.")
+
+    # Create rooms
+    created_rooms = []
+    for num in range(bulk_data.from_number, bulk_data.to_number + 1):
+        price = find_price_for_room_number(num, bulk_data.price_ranges)
+
+        # Skip rooms without a price (gap rooms)
+        if price is None:
+            continue
+
+        # Generate room name with optional padding
+        if bulk_data.padding > 0:
+            num_str = str(num).zfill(bulk_data.padding)
+        else:
+            num_str = str(num)
+
+        room_name = f"{bulk_data.prefix}{num_str}"
+
+        room = Room(
+            property_id=property_id,
+            name=room_name,
+            rent_amount=price,
+            currency=bulk_data.currency,
+        )
+        session.add(room)
+        created_rooms.append(room)
+
+    session.commit()
+
+    # Refresh all rooms to get their IDs
+    for room in created_rooms:
+        session.refresh(room)
+
+    return BulkRoomResponse(
+        created=[RoomResponse.model_validate(room) for room in created_rooms],
+        total_created=len(created_rooms),
+        warnings=warnings,
+    )
