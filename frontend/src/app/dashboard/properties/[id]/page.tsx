@@ -18,7 +18,19 @@ import {
   MoreVertical,
   User,
   AlertCircle,
+  ChevronDown,
 } from "lucide-react";
+
+// Supported currencies
+const CURRENCIES = [
+  { code: "UGX", symbol: "UGX", name: "Ugandan Shilling" },
+  { code: "USD", symbol: "$", name: "US Dollar" },
+  { code: "KES", symbol: "KES", name: "Kenyan Shilling" },
+  { code: "TZS", symbol: "TZS", name: "Tanzanian Shilling" },
+  { code: "RWF", symbol: "RWF", name: "Rwandan Franc" },
+  { code: "EUR", symbol: "€", name: "Euro" },
+  { code: "GBP", symbol: "£", name: "British Pound" },
+];
 
 export default function PropertyDetailPage() {
   const params = useParams();
@@ -55,12 +67,20 @@ export default function PropertyDetailPage() {
     }
   };
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
+  const formatCurrency = (amount: number, currencyCode: string = "UGX") => {
+    const currency = CURRENCIES.find(c => c.code === currencyCode) || CURRENCIES[0];
+    // For currencies with special symbols, use them; otherwise use the code
+    if (["$", "€", "£"].includes(currency.symbol)) {
+      return new Intl.NumberFormat("en-US", {
+        style: "currency",
+        currency: currencyCode,
+        minimumFractionDigits: 0,
+      }).format(amount);
+    }
+    // For currencies like UGX, KES, etc., format as "UGX 1,000,000"
+    return `${currency.symbol} ${new Intl.NumberFormat("en-US", {
       minimumFractionDigits: 0,
-    }).format(amount);
+    }).format(amount)}`;
   };
 
   if (isLoading) {
@@ -255,7 +275,7 @@ export default function PropertyDetailPage() {
                     <div>
                       <h3 className="font-semibold">{room.name}</h3>
                       <p className="text-sm text-[var(--text-muted)]">
-                        {formatCurrency(room.rent_amount)}/month
+                        {formatCurrency(room.rent_amount, room.currency)}/month
                       </p>
                     </div>
                   </div>
@@ -376,9 +396,13 @@ function RoomModal({
   const [formData, setFormData] = useState({
     name: room?.name || "",
     rent_amount: room?.rent_amount || 0,
+    currency: room?.currency || "UGX",
   });
+  const [showCurrencyDropdown, setShowCurrencyDropdown] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+
+  const selectedCurrency = CURRENCIES.find(c => c.code === formData.currency) || CURRENCIES[0];
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -444,10 +468,39 @@ function RoomModal({
               <label htmlFor="rent" className="label">
                 Monthly Rent
               </label>
-              <div className="relative">
-                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none">
-                  $
-                </span>
+              <div className="flex gap-2">
+                {/* Currency Dropdown */}
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setShowCurrencyDropdown(!showCurrencyDropdown)}
+                    className="flex items-center gap-2 h-full px-3 border border-[var(--border)] rounded-xl bg-[var(--surface)] hover:bg-[var(--surface-hover)] transition-colors min-w-[100px]"
+                  >
+                    <span className="font-medium">{selectedCurrency.symbol}</span>
+                    <ChevronDown className="w-4 h-4 text-[var(--text-muted)]" />
+                  </button>
+                  {showCurrencyDropdown && (
+                    <div className="absolute top-full left-0 mt-1 w-56 max-h-60 overflow-y-auto bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-lg z-50">
+                      {CURRENCIES.map((currency) => (
+                        <button
+                          key={currency.code}
+                          type="button"
+                          onClick={() => {
+                            setFormData(prev => ({ ...prev, currency: currency.code }));
+                            setShowCurrencyDropdown(false);
+                          }}
+                          className={`w-full flex items-center gap-3 px-4 py-2.5 hover:bg-[var(--surface-hover)] transition-colors text-left ${
+                            formData.currency === currency.code ? "bg-[var(--primary-50)]" : ""
+                          }`}
+                        >
+                          <span className="font-medium w-12">{currency.symbol}</span>
+                          <span className="text-sm text-[var(--text-secondary)]">{currency.name}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                {/* Amount Input */}
                 <input
                   id="rent"
                   type="number"
@@ -458,9 +511,10 @@ function RoomModal({
                       rent_amount: parseFloat(e.target.value) || 0,
                     }))
                   }
-                  className="input !pl-10"
+                  className="input flex-1"
                   min="0"
                   step="0.01"
+                  placeholder="0"
                   required
                 />
               </div>
