@@ -126,6 +126,12 @@ async def setup_tenant_password(
     Set up password for tenant portal (first time setup).
     Note: Tenant must already have a token (from invite link).
     """
+    if current_tenant.password_hash:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password already set. Please use change password instead.",
+        )
+
     if len(password_data.password) < 6:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
