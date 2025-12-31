@@ -134,7 +134,7 @@ class ApiClient {
     return this.request<RoomWithTenant>(`/properties/${propertyId}/rooms/${roomId}`);
   }
 
-  async createRoom(propertyId: string, data: { name: string; rent_amount: number }) {
+  async createRoom(propertyId: string, data: { name: string; rent_amount: number; currency?: string }) {
     return this.request<Room>(`/properties/${propertyId}/rooms`, {
       method: "POST",
       body: JSON.stringify(data),
@@ -144,7 +144,7 @@ class ApiClient {
   async updateRoom(
     propertyId: string,
     roomId: string,
-    data: { name?: string; rent_amount?: number }
+    data: { name?: string; rent_amount?: number; currency?: string }
   ) {
     return this.request<Room>(`/properties/${propertyId}/rooms/${roomId}`, {
       method: "PUT",
@@ -485,6 +485,7 @@ export interface Room {
   property_id: string;
   name: string;
   rent_amount: number;
+  currency: string;
   is_occupied: boolean;
   created_at: string;
   updated_at: string;
