@@ -19,6 +19,7 @@ import {
   ChevronDown,
   X,
   Send,
+  FileSearch,
   Ban,
   Receipt,
   Home,
@@ -98,6 +99,7 @@ export default function PaymentsPage() {
     LATE: { class: "badge-warning", label: "Late", icon: AlertTriangle },
     OVERDUE: { class: "badge-error", label: "Overdue", icon: AlertTriangle },
     WAIVED: { class: "badge-neutral", label: "Waived", icon: Ban },
+    VERIFYING: { class: "badge-info", label: "Verifying", icon: FileSearch },
   };
 
   if (isLoading) {
