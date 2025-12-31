@@ -158,6 +158,23 @@ class ApiClient {
     });
   }
 
+  async createRoomsBulk(
+    propertyId: string,
+    data: {
+      prefix: string;
+      from_number: number;
+      to_number: number;
+      currency: string;
+      price_ranges: { from_number: number; to_number: number; rent_amount: number }[];
+      padding: number;
+    }
+  ) {
+    return this.request<BulkRoomResponse>(`/properties/${propertyId}/rooms/bulk`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
   // Tenants
   async getTenants(filters?: { property_id?: string; room_id?: string; active_only?: boolean }) {
     const params = new URLSearchParams();
@@ -498,6 +515,12 @@ export interface RoomWithTenant extends Room {
 export interface RoomListResponse {
   rooms: RoomWithTenant[];
   total: number;
+}
+
+export interface BulkRoomResponse {
+  created: Room[];
+  total_created: number;
+  warnings: string[];
 }
 
 export interface Tenant {
