@@ -21,6 +21,7 @@ import {
   X,
   AlertCircle,
   DollarSign,
+  Key,
   Settings,
 } from "lucide-react";
 
@@ -37,6 +38,7 @@ export default function TenantDetailPage() {
   const [showEditTenant, setShowEditTenant] = useState(false);
   const [showEditSchedule, setShowEditSchedule] = useState(false);
   const [showMoveOut, setShowMoveOut] = useState(false);
+  const [showEnablePortal, setShowEnablePortal] = useState(false);
   const [markPaidPayment, setMarkPaidPayment] = useState<Payment | null>(null);
 
   useEffect(() => {
@@ -204,12 +206,22 @@ export default function TenantDetailPage() {
                   Edit
                 </button>
                 {tenant.is_active && (
-                  <button
-                    onClick={() => setShowMoveOut(true)}
-                    className="btn btn-ghost text-[var(--error)]"
-                  >
-                    <UserMinus className="w-4 h-4" />
-                  </button>
+                  <>
+                    <button
+                      onClick={() => setShowEnablePortal(true)}
+                      className={`btn btn-secondary ${tenant.has_portal_access ? "text-[var(--primary)]" : ""}`}
+                      title={tenant.has_portal_access ? "Manage Portal Access" : "Enable Portal Access"}
+                    >
+                      <Key className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => setShowMoveOut(true)}
+                      className="btn btn-ghost text-[var(--error)]"
+                      title="Move Out Tenant"
+                    >
+                      <UserMinus className="w-4 h-4" />
+                    </button>
+                  </>
                 )}
               </div>
             </div>
@@ -486,6 +498,18 @@ export default function TenantDetailPage() {
           onSave={() => {
             loadData();
             setShowMoveOut(false);
+          }}
+        />
+      )}
+
+      {/* Enable Portal Modal */}
+      {showEnablePortal && (
+        <EnablePortalModal
+          tenant={tenant}
+          onClose={() => setShowEnablePortal(false)}
+          onSave={() => {
+            loadData();
+            setShowEnablePortal(false);
           }}
         />
       )}
@@ -988,6 +1012,182 @@ function MarkPaidModal({
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+
+function EnablePortalModal({
+  tenant,
+  onClose,
+  onSave,
+}: {
+  tenant: TenantWithDetails;
+  onClose: () => void;
+  onSave: () => void;
+}) {
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [inviteUrl, setInviteUrl] = useState("");
+  const [copied, setCopied] = useState(false);
+
+  const handleEnable = async () => {
+    setError("");
+    setIsLoading(true);
+    try {
+      const res = await api.enableTenantPortal(tenant.id);
+      setInviteUrl(res.invite_url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to enable portal");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDisable = async () => {
+    if (!confirm("Are you sure? The tenant will lose access immediately.")) return;
+    setError("");
+    setIsLoading(true);
+    try {
+      await api.disableTenantPortal(tenant.id);
+      onSave(); // Refresh parent to show updated status
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to disable portal");
+      setIsLoading(false);
+    }
+  };
+
+  const copyToClipboard = () => {
+    navigator.clipboard.writeText(inviteUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header flex items-center justify-between">
+          <h2 className="text-xl font-semibold" style={{ fontFamily: "var(--font-outfit)" }}>
+            Tenant Portal Access
+          </h2>
+          <button onClick={onClose} className="btn btn-ghost p-2">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="modal-body space-y-6">
+          {error && (
+            <div className="p-3 bg-[var(--error-light)] text-[var(--error)] rounded-lg text-sm">
+              {error}
+            </div>
+          )}
+
+          {!tenant.email ? (
+            <div className="text-center p-4">
+              <AlertCircle className="w-10 h-10 text-[var(--warning)] mx-auto mb-2" />
+              <p className="font-medium">Email Required</p>
+              <p className="text-sm text-[var(--text-secondary)]">
+                The tenant must have an email address to use the portal. Please edit the tenant details first.
+              </p>
+            </div>
+          ) : inviteUrl ? (
+            <div className="animate-fade-in">
+              <div className="flex flex-col items-center justify-center p-6 bg-[var(--success-light)] rounded-xl mb-4">
+                <CheckCircle className="w-10 h-10 text-[var(--success)] mb-2" />
+                <p className="font-medium text-[var(--success-dark)]">Portal Access Enabled!</p>
+              </div>
+              
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Share this invite link with {tenant.name}:</p>
+                <div className="flex gap-2">
+                  <input 
+                    type="text" 
+                    readOnly 
+                    value={inviteUrl} 
+                    className="input font-mono text-sm bg-[var(--surface-inset)]"
+                  />
+                  <button onClick={copyToClipboard} className="btn btn-secondary whitespace-nowrap">
+                    {copied ? "Copied!" : "Copy Link"}
+                  </button>
+                </div>
+                <p className="text-xs text-[var(--text-muted)]">
+                  Link expires in 7 days. This link allows the tenant to set their password.
+                </p>
+              </div>
+            </div>
+          ) : tenant.has_portal_access ? (
+             <div className="space-y-4">
+              <div className="flex items-center gap-3 p-4 bg-[var(--success-light)] rounded-xl">
+                 <div className="w-10 h-10 rounded-full bg-[var(--success)] flex items-center justify-center text-white">
+                    <CheckCircle className="w-6 h-6" />
+                 </div>
+                 <div>
+                    <p className="font-medium text-[var(--success-dark)]">Access Active</p>
+                    <p className="text-sm text-[var(--text-secondary)]">
+                       Tenant has set up their password and can log in.
+                    </p>
+                 </div>
+              </div>
+              
+              <div className="p-4 border border-[var(--border)] rounded-xl">
+                 <h4 className="font-medium mb-2">Need to reset access?</h4>
+                 <p className="text-sm text-[var(--text-secondary)] mb-4">
+                    If the tenant forgot their password or you want to revoke access, you can generate a new invite link or disable access completely.
+                 </p>
+                 <div className="flex gap-2">
+                    <button 
+                       onClick={handleEnable} 
+                       disabled={isLoading}
+                       className="btn btn-secondary btn-sm"
+                    >
+                       Generate New Invite Link
+                    </button>
+                    <button 
+                       onClick={handleDisable}
+                       disabled={isLoading} 
+                       className="btn btn-ghost btn-sm text-[var(--error)]"
+                    >
+                       Revoke Access
+                    </button>
+                 </div>
+              </div>
+             </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="p-4 bg-[var(--surface-inset)] rounded-xl">
+                <div className="flex items-start gap-3">
+                   <Key className="w-5 h-5 text-[var(--primary)] mt-0.5" />
+                   <div>
+                      <p className="font-medium">Enable Portal Access</p>
+                      <p className="text-sm text-[var(--text-secondary)] mt-1">
+                         This will generate a secure invite link for <strong>{tenant.email}</strong>. 
+                         The tenant can use this link to set a password and access their dashboard to view payment history.
+                      </p>
+                   </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="modal-footer">
+          <button type="button" onClick={onClose} className="btn btn-secondary">
+            {inviteUrl ? "Done" : "Cancel"}
+          </button>
+          {!inviteUrl && !tenant.has_portal_access && tenant.email && (
+            <button type="button" onClick={handleEnable} disabled={isLoading} className="btn btn-primary">
+              {isLoading ? (
+                <>
+                  <div className="spinner" />
+                  Generating Link...
+                </>
+              ) : (
+                "Generate Invite Link"
+              )}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
