@@ -17,6 +17,9 @@ aiosmtplib==3.0.1
 # Background tasks
 apscheduler==3.10.4
 
+# Rate limiting
+slowapi==0.1.9
+
 # Utilities
 python-dotenv==1.0.1
 pydantic[email]==2.6.1
