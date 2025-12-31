@@ -45,6 +45,7 @@ class PaymentResponse(BaseModel):
     status: PaymentStatus
     paid_date: Optional[date] = None
     payment_reference: Optional[str] = None
+    receipt_url: Optional[str] = None
     notes: Optional[str] = None
     is_manual: bool
     created_at: datetime
