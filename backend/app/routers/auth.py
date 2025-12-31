@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlmodel import Session, select
 from datetime import timedelta
 
@@ -10,6 +10,7 @@ from app.core.security import (
     get_current_landlord,
 )
 from app.core.config import settings
+from app.core.rate_limit import limiter, AUTH_RATE_LIMIT
 from app.models.landlord import Landlord
 from app.schemas.landlord import (
     LandlordCreate,
@@ -65,10 +66,16 @@ async def register(
 
 
 @router.post("/login", response_model=LoginResponse)
-async def login(credentials: LandlordLogin, session: Session = Depends(get_session)):
+@limiter.limit(AUTH_RATE_LIMIT)
+async def login(
+    request: Request,
+    credentials: LandlordLogin,
+    session: Session = Depends(get_session),
+):
     """
     Login with email and password.
     Returns access token and landlord info on success.
+    Rate limited to 5 attempts per minute per IP.
     """
     # Find landlord by email
     statement = select(Landlord).where(Landlord.email == credentials.email)
