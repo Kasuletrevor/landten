@@ -445,7 +445,7 @@ function RoomModal({
                 Monthly Rent
               </label>
               <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]">
+                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)] pointer-events-none">
                   $
                 </span>
                 <input
@@ -458,7 +458,7 @@ function RoomModal({
                       rent_amount: parseFloat(e.target.value) || 0,
                     }))
                   }
-                  className="input pl-8"
+                  className="input !pl-10"
                   min="0"
                   step="0.01"
                   required
