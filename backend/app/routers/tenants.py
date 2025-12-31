@@ -4,7 +4,12 @@ from typing import Optional
 from datetime import datetime, date, timezone
 
 from app.core.database import get_session
-from app.core.security import get_current_landlord
+from app.core.security import (
+    get_current_landlord,
+    get_password_hash,
+    create_access_token,
+)
+from app.core.config import settings
 from app.models.landlord import Landlord
 from app.models.property import Property
 from app.models.room import Room
@@ -117,6 +122,7 @@ async def list_tenants(
                 property_name=property.name if property else None,
                 rent_amount=room.rent_amount if room else None,
                 has_payment_schedule=schedule is not None,
+                has_portal_access=tenant.password_hash is not None,
                 pending_payments=len(pending_count),
                 overdue_payments=len(overdue_count),
             )
@@ -191,6 +197,7 @@ async def create_tenant(
         property_name=property.name,
         rent_amount=room.rent_amount,
         has_payment_schedule=schedule is not None,
+        has_portal_access=tenant.password_hash is not None,
         pending_payments=0,
         overdue_payments=0,
     )
@@ -243,6 +250,7 @@ async def get_tenant(
         property_name=property.name,
         rent_amount=room.rent_amount,
         has_payment_schedule=schedule is not None,
+        has_portal_access=tenant.password_hash is not None,
         pending_payments=pending_count,
         overdue_payments=overdue_count,
     )
@@ -456,3 +464,91 @@ async def update_tenant_schedule(
     session.refresh(schedule)
 
     return PaymentScheduleResponse.model_validate(schedule)
+
+
+# Tenant Portal Access
+@router.post("/{tenant_id}/enable-portal")
+async def enable_tenant_portal(
+    tenant_id: str,
+    current_landlord: Landlord = Depends(get_current_landlord),
+    session: Session = Depends(get_session),
+):
+    """
+    Enable portal access for a tenant.
+    Returns a one-time invite token the tenant can use to set up their password.
+    Tenant must have an email address set.
+    """
+    tenant = session.get(Tenant, tenant_id)
+    if not tenant:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found"
+        )
+
+    verify_room_access(tenant.room_id, current_landlord.id, session)
+
+    if not tenant.email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Tenant must have an email address to enable portal access",
+        )
+
+    if not tenant.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot enable portal for inactive tenant",
+        )
+
+    # Generate a one-time invite token (valid for 7 days)
+    from datetime import timedelta
+
+    invite_token = create_access_token(
+        data={"sub": tenant.id, "type": "tenant", "purpose": "invite"},
+        expires_delta=timedelta(days=7),
+    )
+
+    # Get room and property for response
+    room = session.get(Room, tenant.room_id)
+    property_obj = session.get(Property, room.property_id) if room else None
+
+    return {
+        "message": "Portal access invite created",
+        "tenant_id": tenant.id,
+        "tenant_name": tenant.name,
+        "tenant_email": tenant.email,
+        "property_name": property_obj.name if property_obj else None,
+        "invite_token": invite_token,
+        "invite_url": f"{settings.FRONTEND_URL}/tenant/setup?token={invite_token}",
+        "expires_in_days": 7,
+        "has_existing_access": tenant.password_hash is not None,
+    }
+
+
+@router.delete("/{tenant_id}/disable-portal")
+async def disable_tenant_portal(
+    tenant_id: str,
+    current_landlord: Landlord = Depends(get_current_landlord),
+    session: Session = Depends(get_session),
+):
+    """
+    Disable portal access for a tenant (removes their password).
+    """
+    tenant = session.get(Tenant, tenant_id)
+    if not tenant:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found"
+        )
+
+    verify_room_access(tenant.room_id, current_landlord.id, session)
+
+    if not tenant.password_hash:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Tenant does not have portal access",
+        )
+
+    tenant.password_hash = None
+    tenant.updated_at = datetime.now(timezone.utc)
+    session.add(tenant)
+    session.commit()
+
+    return {"message": "Portal access disabled", "tenant_id": tenant.id}

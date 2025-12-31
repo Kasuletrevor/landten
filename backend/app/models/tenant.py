@@ -19,6 +19,7 @@ class Tenant(SQLModel, table=True):
     name: str
     email: Optional[str] = Field(default=None, index=True)
     phone: Optional[str] = None
+    password_hash: Optional[str] = None  # For tenant portal authentication
     move_in_date: date
     move_out_date: Optional[date] = None
     is_active: bool = Field(default=True)

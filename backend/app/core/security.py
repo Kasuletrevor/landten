@@ -9,6 +9,7 @@ from sqlmodel import Session, select
 from app.core.config import settings
 from app.core.database import get_session
 from app.models.landlord import Landlord
+from app.models.tenant import Tenant
 
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -74,6 +75,11 @@ async def get_current_landlord(
     if payload is None:
         raise credentials_exception
 
+    # Check token type - must be landlord or unspecified (for backwards compatibility)
+    token_type = payload.get("type", "landlord")
+    if token_type != "landlord":
+        raise credentials_exception
+
     landlord_id: str = payload.get("sub")
     if landlord_id is None:
         raise credentials_exception
@@ -84,3 +90,47 @@ async def get_current_landlord(
         raise credentials_exception
 
     return landlord
+
+
+async def get_current_tenant(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    session: Session = Depends(get_session),
+) -> Tenant:
+    """
+    Dependency to get the current authenticated tenant.
+    Validates the JWT token and returns the tenant.
+    """
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+    token = credentials.credentials
+    payload = decode_token(token)
+
+    if payload is None:
+        raise credentials_exception
+
+    # Check token type - must be tenant
+    token_type = payload.get("type")
+    if token_type != "tenant":
+        raise credentials_exception
+
+    tenant_id: str = payload.get("sub")
+    if tenant_id is None:
+        raise credentials_exception
+
+    # Get tenant from database
+    tenant = session.get(Tenant, tenant_id)
+    if tenant is None:
+        raise credentials_exception
+
+    # Check if tenant is active
+    if not tenant.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Tenant account is inactive",
+        )
+
+    return tenant

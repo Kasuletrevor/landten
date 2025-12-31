@@ -94,14 +94,14 @@ export default function RegisterPage() {
                 Full name
               </label>
               <div className="relative">
-                <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
+                <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-muted)] pointer-events-none" />
                 <input
                   id="name"
                   name="name"
                   type="text"
                   value={formData.name}
                   onChange={handleChange}
-                  className="input pl-10"
+                  className="input pl-12"
                   placeholder="John Doe"
                   required
                 />
@@ -113,14 +113,14 @@ export default function RegisterPage() {
                 Email address
               </label>
               <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
+                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-muted)] pointer-events-none" />
                 <input
                   id="email"
                   name="email"
                   type="email"
                   value={formData.email}
                   onChange={handleChange}
-                  className="input pl-10"
+                  className="input pl-12"
                   placeholder="you@example.com"
                   required
                 />
@@ -132,15 +132,15 @@ export default function RegisterPage() {
                 Phone number <span className="text-[var(--text-muted)]">(optional)</span>
               </label>
               <div className="relative">
-                <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
+                <Phone className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-muted)] pointer-events-none" />
                 <input
                   id="phone"
                   name="phone"
                   type="tel"
                   value={formData.phone}
                   onChange={handleChange}
-                  className="input pl-10"
-                  placeholder="+1 (555) 123-4567"
+                  className="input pl-12"
+                  placeholder="(555) 123-4567"
                 />
               </div>
             </div>
@@ -150,14 +150,14 @@ export default function RegisterPage() {
                 Password
               </label>
               <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
+                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-muted)] pointer-events-none" />
                 <input
                   id="password"
                   name="password"
                   type="password"
                   value={formData.password}
                   onChange={handleChange}
-                  className="input pl-10"
+                  className="input pl-12"
                   placeholder="Create a password"
                   required
                 />
@@ -169,14 +169,14 @@ export default function RegisterPage() {
                 Confirm password
               </label>
               <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
+                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-muted)] pointer-events-none" />
                 <input
                   id="confirmPassword"
                   name="confirmPassword"
                   type="password"
                   value={formData.confirmPassword}
                   onChange={handleChange}
-                  className="input pl-10"
+                  className="input pl-12"
                   placeholder="Confirm your password"
                   required
                 />

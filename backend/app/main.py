@@ -12,7 +12,15 @@ from sqlmodel import Session
 
 from app.core.config import settings
 from app.core.database import engine
-from app.routers import auth, properties, rooms, tenants, payments, notifications
+from app.routers import (
+    auth,
+    properties,
+    rooms,
+    tenants,
+    payments,
+    notifications,
+    tenant_auth,
+)
 from app.services.payment_service import (
     generate_all_due_payments,
     update_payment_statuses,
@@ -94,6 +102,7 @@ app.add_middleware(
 
 # Include routers
 app.include_router(auth.router, prefix="/api")
+app.include_router(tenant_auth.router, prefix="/api")
 app.include_router(properties.router, prefix="/api")
 app.include_router(rooms.router, prefix="/api")
 app.include_router(tenants.router, prefix="/api")

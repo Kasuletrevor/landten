@@ -31,6 +31,23 @@ class TenantMoveOut(BaseModel):
     move_out_date: date
 
 
+# Tenant Portal Auth schemas
+class TenantLogin(BaseModel):
+    email: EmailStr
+    password: str
+
+
+class TenantSetPassword(BaseModel):
+    """Used when tenant first sets up their portal account"""
+
+    password: str
+
+
+class TenantChangePassword(BaseModel):
+    current_password: str
+    new_password: str
+
+
 # Response schemas
 class TenantResponse(BaseModel):
     id: str
@@ -49,6 +66,31 @@ class TenantResponse(BaseModel):
         from_attributes = True
 
 
+class TenantPortalResponse(BaseModel):
+    """Tenant info for portal (includes property/room details)"""
+
+    id: str
+    name: str
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    move_in_date: date
+    move_out_date: Optional[date] = None
+    is_active: bool
+    room_name: Optional[str] = None
+    property_name: Optional[str] = None
+    landlord_name: Optional[str] = None
+    has_portal_access: bool = False
+
+    class Config:
+        from_attributes = True
+
+
+class TenantLoginResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    tenant: TenantPortalResponse
+
+
 class TenantWithDetails(TenantResponse):
     """Tenant with room and property info"""
 
@@ -57,6 +99,7 @@ class TenantWithDetails(TenantResponse):
     property_name: Optional[str] = None
     rent_amount: Optional[float] = None
     has_payment_schedule: bool = False
+    has_portal_access: bool = False
     pending_payments: int = 0
     overdue_payments: int = 0
 
