@@ -40,8 +40,13 @@ export default function DashboardLayout({
 
   // Close sidebar when route changes
   useEffect(() => {
-    setSidebarOpen(false);
-  }, [pathname]);
+    // We don't need to manually close the sidebar on route change via state here
+    // if we handle it correctly in the render or via link clicks.
+    // However, if we must:
+    if (sidebarOpen) {
+       setSidebarOpen(false);
+    }
+  }, [pathname, sidebarOpen]);
 
   if (isLoading) {
     return (
