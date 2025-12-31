@@ -3,7 +3,7 @@ Tenant Portal Authentication Router.
 Handles tenant login, password setup, and profile access.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlmodel import Session, select
 from datetime import timedelta, datetime, timezone
 
@@ -15,6 +15,7 @@ from app.core.security import (
     get_current_tenant,
 )
 from app.core.config import settings
+from app.core.rate_limit import limiter, AUTH_RATE_LIMIT, SETUP_RATE_LIMIT
 from app.models.tenant import Tenant
 from app.models.room import Room
 from app.models.property import Property
@@ -55,8 +56,9 @@ def get_tenant_portal_response(
 
 
 @router.post("/login", response_model=TenantLoginResponse)
+@limiter.limit(AUTH_RATE_LIMIT)
 async def tenant_login(
-    credentials: TenantLogin, session: Session = Depends(get_session)
+    request: Request, credentials: TenantLogin, session: Session = Depends(get_session)
 ):
     """
     Login to tenant portal with email and password.
@@ -117,7 +119,9 @@ async def get_tenant_me(
 
 
 @router.post("/setup-password", response_model=TenantPortalResponse)
+@limiter.limit(SETUP_RATE_LIMIT)
 async def setup_tenant_password(
+    request: Request,
     password_data: TenantSetPassword,
     current_tenant: Tenant = Depends(get_current_tenant),
     session: Session = Depends(get_session),
