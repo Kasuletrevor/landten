@@ -407,7 +407,7 @@ function AddTenantModal({
 }) {
   const [step, setStep] = useState(1);
   const [selectedProperty, setSelectedProperty] = useState("");
-  const [rooms, setRooms] = useState<{ id: string; name: string; rent_amount: number }[]>([]);
+  const [rooms, setRooms] = useState<{ id: string; name: string; rent_amount: number; currency: string }[]>([]);
   const [formData, setFormData] = useState({
     room_id: "",
     name: "",
@@ -534,7 +534,7 @@ function AddTenantModal({
                     >
                       {rooms.map((room) => (
                         <option key={room.id} value={room.id}>
-                          {room.name} — ${room.rent_amount}/month
+                          {room.name} — {room.currency} {room.rent_amount.toLocaleString()}/month
                         </option>
                       ))}
                     </select>
