@@ -203,6 +203,59 @@ class ApiClient {
     });
   }
 
+  // Tenant Portal (Landlord Side)
+  async enableTenantPortal(tenantId: string) {
+    return this.request<{ invite_url: string; invite_token: string }>(
+      `/tenants/${tenantId}/enable-portal`,
+      { method: "POST" }
+    );
+  }
+
+  async disableTenantPortal(tenantId: string) {
+    return this.request<void>(`/tenants/${tenantId}/disable-portal`, {
+      method: "DELETE",
+    });
+  }
+
+  // Tenant Portal (Tenant Side)
+  async tenantLogin(email: string, password: string) {
+    return this.request<TenantLoginResponse>("/tenant-auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email, password }),
+    });
+  }
+
+  async tenantSetupPassword(token: string, password: string) {
+    // We explicitly set the Authorization header with the invite token
+    // This overrides the default behavior if we were using a raw fetch,
+    // but since our request method appends the stored token if it exists,
+    // we need to be careful. However, for a setup flow, the user shouldn't be logged in.
+    return this.request<TenantPortalResponse>("/tenant-auth/setup-password", {
+      method: "POST",
+      body: JSON.stringify({ password }),
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+  }
+
+  async getTenantMe() {
+    return this.request<TenantPortalResponse>("/tenant-auth/me");
+  }
+
+  async getTenantPaymentsMe() {
+    return this.request<{
+      payments: Payment[];
+      summary: {
+        total_payments: number;
+        pending: number;
+        overdue: number;
+        paid_on_time: number;
+        paid_late: number;
+      };
+    }>("/tenant-auth/payments");
+  }
+
   // Payment Schedule
   async createPaymentSchedule(
     tenantId: string,
@@ -295,6 +348,32 @@ class ApiClient {
       method: "POST",
       body: JSON.stringify(data),
     });
+  }
+
+  async uploadPaymentReceipt(paymentId: string, file: File) {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const token = this.getToken();
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${API_BASE}/payments/${paymentId}/upload-receipt`, {
+      method: "POST",
+      body: formData,
+      headers,
+    });
+
+    if (!response.ok) {
+      const error: ApiError = await response.json().catch(() => ({
+        detail: "An error occurred during upload",
+      }));
+      throw new Error(error.detail);
+    }
+
+    return response.json() as Promise<PaymentWithTenant>;
   }
 
   // Notifications
@@ -438,6 +517,27 @@ export interface TenantWithDetails extends Tenant {
   property: Property;
   payment_schedule?: PaymentSchedule;
   payments: Payment[];
+  has_portal_access: boolean;
+}
+
+export interface TenantLoginResponse {
+  access_token: string;
+  token_type: string;
+  tenant: TenantPortalResponse;
+}
+
+export interface TenantPortalResponse {
+  id: string;
+  name: string;
+  email: string;
+  phone?: string;
+  move_in_date: string;
+  move_out_date?: string;
+  is_active: boolean;
+  room_name?: string;
+  property_name?: string;
+  landlord_name?: string;
+  has_portal_access: boolean;
 }
 
 export interface TenantListResponse {
@@ -464,7 +564,8 @@ export type PaymentStatus =
   | "ON_TIME"
   | "LATE"
   | "OVERDUE"
-  | "WAIVED";
+  | "WAIVED"
+  | "VERIFYING";
 
 export interface Payment {
   id: string;
@@ -478,6 +579,7 @@ export interface Payment {
   status: PaymentStatus;
   paid_date?: string;
   payment_reference?: string;
+  receipt_url?: string;
   notes?: string;
   is_manual: boolean;
   created_at: string;
