@@ -90,8 +90,8 @@ export default function LandingPage() {
                 Start Free Trial
                 <ChevronRight className="w-5 h-5" />
               </Link>
-              <Link href="/login" className="btn btn-secondary text-base px-6 py-3">
-                View Demo
+              <Link href="/tenant/login" className="btn btn-secondary text-base px-6 py-3">
+                Tenant Portal
               </Link>
             </div>
           </div>
