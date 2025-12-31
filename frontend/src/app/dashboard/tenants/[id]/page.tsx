@@ -23,6 +23,7 @@ import {
   DollarSign,
   Key,
   Settings,
+  FileSearch,
 } from "lucide-react";
 
 export default function TenantDetailPage() {
@@ -79,6 +80,7 @@ export default function TenantDetailPage() {
     LATE: { class: "badge-warning", label: "Late", icon: AlertTriangle },
     OVERDUE: { class: "badge-error", label: "Overdue", icon: AlertTriangle },
     WAIVED: { class: "badge-neutral", label: "Waived", icon: Ban },
+    VERIFYING: { class: "badge-info", label: "Verifying", icon: FileSearch },
   };
 
   if (isLoading) {
