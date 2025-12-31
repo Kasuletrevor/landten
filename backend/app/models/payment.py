@@ -17,6 +17,7 @@ class PaymentStatus(str, Enum):
     LATE = "late"  # Paid after window but within period
     OVERDUE = "overdue"  # Not paid after period ends
     WAIVED = "waived"  # Landlord forgave the payment
+    VERIFYING = "verifying"  # Tenant uploaded receipt, awaiting approval
 
 
 class Payment(SQLModel, table=True):
@@ -41,6 +42,7 @@ class Payment(SQLModel, table=True):
     status: PaymentStatus = Field(default=PaymentStatus.UPCOMING)
     paid_date: Optional[date] = None
     payment_reference: Optional[str] = None  # Bank receipt/transaction reference
+    receipt_url: Optional[str] = None  # URL to uploaded receipt file
     notes: Optional[str] = None
 
     # Flags
