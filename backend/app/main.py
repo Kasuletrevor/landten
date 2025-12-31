@@ -80,7 +80,11 @@ async def lifespan(app: FastAPI):
 
 
 from fastapi.staticfiles import StaticFiles
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 import os
+
+from app.core.rate_limit import limiter
 
 # Create uploads directory if it doesn't exist
 os.makedirs("uploads/receipts", exist_ok=True)
@@ -92,6 +96,10 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+# Add rate limiter to app state
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # CORS configuration
 app.add_middleware(
