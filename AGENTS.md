@@ -371,9 +371,9 @@ When modifying these critical files, extra care is required:
 
 | Date | Change | Author |
 |------|--------|--------|
-| 2025-12-31 | Initial creation | AI Agent |
-| 2025-12-31 | Added receipt upload workflow | AI Agent |
-| 2025-12-31 | Removed Stripe integration | AI Agent |
+| 2025-12-31 | Initial creation | Kasule Trevor |
+| 2025-12-31 | Added receipt upload workflow | Kasule Trevor |
+| 2025-12-31 | Removed Stripe integration | Kasule Trevor |
 
 ---
 
