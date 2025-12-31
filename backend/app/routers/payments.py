@@ -5,7 +5,7 @@ from datetime import datetime, date, timezone
 from dateutil.relativedelta import relativedelta
 
 from app.core.database import get_session
-from app.core.security import get_current_landlord
+from app.core.security import get_current_landlord, get_current_tenant
 from app.models.landlord import Landlord
 from app.models.property import Property
 from app.models.room import Room
@@ -22,6 +22,11 @@ from app.schemas.payment import (
     PaymentListResponse,
     PaymentSummary,
 )
+from fastapi import UploadFile, File
+import shutil
+import os
+import uuid
+from typing import Annotated
 
 router = APIRouter(prefix="/payments", tags=["Payments"])
 
@@ -528,6 +533,82 @@ async def create_manual_payment(
     # Set initial status based on dates
     today = date.today()
     payment.status = update_payment_status(payment, today)
+
+    session.add(payment)
+    session.commit()
+    session.refresh(payment)
+
+    return enrich_payment_with_tenant(payment, session)
+
+
+@router.post("/{payment_id}/upload-receipt", response_model=PaymentWithTenant)
+async def upload_payment_receipt(
+    payment_id: str,
+    file: UploadFile = File(...),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    session: Session = Depends(get_session),
+):
+    """
+    Upload a proof of payment receipt for a specific payment.
+    Changes status to VERIFYING.
+    """
+    # Verify payment belongs to tenant
+    payment = session.get(Payment, payment_id)
+    if not payment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Payment not found"
+        )
+
+    if payment.tenant_id != current_tenant.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to access this payment",
+        )
+
+    # Allow re-uploading if status is UPCOMING, PENDING, OVERDUE, or VERIFYING
+    # Prevent if already approved (ON_TIME, LATE, WAIVED)
+    if payment.status in [
+        PaymentStatus.ON_TIME,
+        PaymentStatus.LATE,
+        PaymentStatus.WAIVED,
+    ]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Payment is already finalized with status: {payment.status.value}",
+        )
+
+    # Validate file type (basic check)
+    if file.content_type not in ["image/jpeg", "image/png", "application/pdf"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid file type. Only JPEG, PNG, and PDF are allowed.",
+        )
+
+    # Generate unique filename
+    file_ext = os.path.splitext(file.filename)[1] if file.filename else ""
+    filename = f"{payment.id}_{uuid.uuid4()}{file_ext}"
+    file_path = os.path.join("uploads", "receipts", filename)
+
+    # ensure directory exists
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
+
+    # Save file
+    try:
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Could not save file: {str(e)}",
+        )
+
+    # Update payment record
+    # Construct URL relative to base URL (client handles full URL construction)
+    # We mounted "uploads" in main.py so this is accessible via /uploads/...
+    payment.receipt_url = f"/uploads/receipts/{filename}"
+    payment.status = PaymentStatus.VERIFYING
+    payment.updated_at = datetime.now(timezone.utc)
+    # Clear any previous notes about rejection if they existed? For now leave notes.
 
     session.add(payment)
     session.commit()
