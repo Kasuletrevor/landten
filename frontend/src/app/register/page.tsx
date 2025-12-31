@@ -4,7 +4,22 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
-import { Building2, Mail, Lock, User, Phone, AlertCircle, Check } from "lucide-react";
+import { Building2, Mail, Lock, User, Phone, AlertCircle, Check, Eye, EyeOff, ChevronDown } from "lucide-react";
+
+// Country codes with flags
+const countryCodes = [
+  { code: "+256", country: "UG", flag: "🇺🇬", name: "Uganda" },
+  { code: "+254", country: "KE", flag: "🇰🇪", name: "Kenya" },
+  { code: "+255", country: "TZ", flag: "🇹🇿", name: "Tanzania" },
+  { code: "+250", country: "RW", flag: "🇷🇼", name: "Rwanda" },
+  { code: "+211", country: "SS", flag: "🇸🇸", name: "South Sudan" },
+  { code: "+243", country: "CD", flag: "🇨🇩", name: "DR Congo" },
+  { code: "+234", country: "NG", flag: "🇳🇬", name: "Nigeria" },
+  { code: "+233", country: "GH", flag: "🇬🇭", name: "Ghana" },
+  { code: "+27", country: "ZA", flag: "🇿🇦", name: "South Africa" },
+  { code: "+1", country: "US", flag: "🇺🇸", name: "United States" },
+  { code: "+44", country: "GB", flag: "🇬🇧", name: "United Kingdom" },
+];
 
 export default function RegisterPage() {
   const [formData, setFormData] = useState({
@@ -14,6 +29,10 @@ export default function RegisterPage() {
     confirmPassword: "",
     phone: "",
   });
+  const [countryCode, setCountryCode] = useState(countryCodes[0]); // Uganda default
+  const [showCountryDropdown, setShowCountryDropdown] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const { register } = useAuth();
@@ -47,7 +66,7 @@ export default function RegisterPage() {
         name: formData.name,
         email: formData.email,
         password: formData.password,
-        phone: formData.phone || undefined,
+        phone: formData.phone ? `${countryCode.code}${formData.phone}` : undefined,
       });
       router.push("/dashboard");
     } catch (err) {
@@ -101,7 +120,7 @@ export default function RegisterPage() {
                   type="text"
                   value={formData.name}
                   onChange={handleChange}
-                  className="input pl-12"
+                  className="input !pl-14"
                   placeholder="John Doe"
                   required
                 />
@@ -120,7 +139,7 @@ export default function RegisterPage() {
                   type="email"
                   value={formData.email}
                   onChange={handleChange}
-                  className="input pl-12"
+                  className="input !pl-14"
                   placeholder="you@example.com"
                   required
                 />
@@ -131,17 +150,51 @@ export default function RegisterPage() {
               <label htmlFor="phone" className="label">
                 Phone number <span className="text-[var(--text-muted)]">(optional)</span>
               </label>
-              <div className="relative">
-                <Phone className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-muted)] pointer-events-none" />
-                <input
-                  id="phone"
-                  name="phone"
-                  type="tel"
-                  value={formData.phone}
-                  onChange={handleChange}
-                  className="input pl-12"
-                  placeholder="(555) 123-4567"
-                />
+              <div className="relative flex">
+                {/* Country Code Dropdown */}
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setShowCountryDropdown(!showCountryDropdown)}
+                    className="flex items-center gap-1 h-full px-3 border border-r-0 border-[var(--border)] rounded-l-xl bg-[var(--surface)] hover:bg-[var(--surface-hover)] transition-colors"
+                  >
+                    <span className="text-lg">{countryCode.flag}</span>
+                    <span className="text-sm font-medium text-[var(--text-secondary)]">{countryCode.code}</span>
+                    <ChevronDown className="w-4 h-4 text-[var(--text-muted)]" />
+                  </button>
+                  {showCountryDropdown && (
+                    <div className="absolute top-full left-0 mt-1 w-56 max-h-60 overflow-y-auto bg-[var(--surface)] border border-[var(--border)] rounded-xl shadow-lg z-50">
+                      {countryCodes.map((country) => (
+                        <button
+                          key={country.code}
+                          type="button"
+                          onClick={() => {
+                            setCountryCode(country);
+                            setShowCountryDropdown(false);
+                          }}
+                          className={`w-full flex items-center gap-3 px-4 py-2.5 hover:bg-[var(--surface-hover)] transition-colors text-left ${countryCode.code === country.code ? "bg-[var(--primary-50)]" : ""
+                            }`}
+                        >
+                          <span className="text-lg">{country.flag}</span>
+                          <span className="text-sm font-medium">{country.name}</span>
+                          <span className="text-sm text-[var(--text-muted)] ml-auto">{country.code}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                {/* Phone Input */}
+                <div className="relative flex-1">
+                  <input
+                    id="phone"
+                    name="phone"
+                    type="tel"
+                    value={formData.phone}
+                    onChange={handleChange}
+                    className="input !rounded-l-none"
+                    placeholder="712345678"
+                  />
+                </div>
               </div>
             </div>
 
@@ -154,13 +207,20 @@ export default function RegisterPage() {
                 <input
                   id="password"
                   name="password"
-                  type="password"
+                  type={showPassword ? "text" : "password"}
                   value={formData.password}
                   onChange={handleChange}
-                  className="input pl-12"
+                  className="input !pl-14 !pr-12"
                   placeholder="Create a password"
                   required
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
+                >
+                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                </button>
               </div>
             </div>
 
@@ -173,13 +233,20 @@ export default function RegisterPage() {
                 <input
                   id="confirmPassword"
                   name="confirmPassword"
-                  type="password"
+                  type={showConfirmPassword ? "text" : "password"}
                   value={formData.confirmPassword}
                   onChange={handleChange}
-                  className="input pl-12"
+                  className="input !pl-14 !pr-12"
                   placeholder="Confirm your password"
                   required
                 />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-secondary)] transition-colors"
+                >
+                  {showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                </button>
               </div>
             </div>
 
