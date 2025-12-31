@@ -79,6 +79,12 @@ async def lifespan(app: FastAPI):
     print("[Scheduler] Background scheduler stopped")
 
 
+from fastapi.staticfiles import StaticFiles
+import os
+
+# Create uploads directory if it doesn't exist
+os.makedirs("uploads/receipts", exist_ok=True)
+
 # Create FastAPI app
 app = FastAPI(
     title=settings.APP_NAME,
@@ -108,6 +114,9 @@ app.include_router(rooms.router, prefix="/api")
 app.include_router(tenants.router, prefix="/api")
 app.include_router(payments.router, prefix="/api")
 app.include_router(notifications.router, prefix="/api")
+
+# Mount static files for uploads
+app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 
 @app.get("/")
