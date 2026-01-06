@@ -41,6 +41,7 @@ Always use the `commit` skill when saving progress. This ensures:
 **Format**: `<verb>(<scope>): <short message>`
 
 **Allowed Verbs**:
+
 - `feat` - new user-facing capability
 - `fix` - bug fix
 - `refactor` - structural change, no behavior change
@@ -51,6 +52,7 @@ Always use the `commit` skill when saving progress. This ensures:
 - `style` - formatting, lint-only changes
 
 **Examples**:
+
 ```
 feat(payments): add receipt upload endpoint
 fix(auth): handle missing token edge case
@@ -60,6 +62,7 @@ test(backend): add tenant auth tests
 ```
 
 **Anti-patterns to avoid**:
+
 - "updated stuff"
 - "minor changes"
 - "fixes"
@@ -89,6 +92,7 @@ Use when creating UI components. Ensures:
 ### Multi-file Commits
 
 Only allowed when files are inseparable:
+
 - Interface + implementation
 - Schema + migration
 - Test + fixture
@@ -96,6 +100,7 @@ Only allowed when files are inseparable:
 ### Scope Inference
 
 Infer scope from file path:
+
 - `backend/app/routers/payments.py` -> `payments`
 - `frontend/src/lib/api.ts` -> `api`
 - `backend/app/models/payment.py` -> `models`
@@ -110,6 +115,7 @@ Infer scope from file path:
 **Problem**: We attempted to integrate Stripe for direct payments, then decided to revert to manual receipt upload.
 
 **Solution**: Complete removal required touching multiple files:
+
 - `backend/requirements.txt` - remove stripe package
 - `backend/app/core/config.py` - remove STRIPE_* settings
 - `backend/app/routers/payments.py` - remove create_payment_intent endpoint
@@ -124,6 +130,7 @@ Infer scope from file path:
 **Problem**: After removing Stripe schemas, the payments router still tried to import `PaymentIntentCreate` and `PaymentIntentResponse`, preventing server startup.
 
 **Solution**: Always grep for removed symbols:
+
 ```bash
 grep -r "PaymentIntentCreate" backend/
 grep -r "STRIPE" backend/
@@ -135,7 +142,8 @@ grep -r "STRIPE" backend/
 
 **Problem**: Server failed to start with `ModuleNotFoundError: No module named 'apscheduler'` despite it being in requirements.txt.
 
-**Solution**: 
+**Solution**:
+
 ```bash
 pip install -r requirements.txt
 # or specifically
@@ -149,6 +157,7 @@ pip install apscheduler
 **Problem**: Auto-generated migration used `sqlmodel.sql.sqltypes.AutoString()` which failed at runtime.
 
 **Solution**: Change to `sqlmodel.AutoString()` or `sa.String()`:
+
 ```python
 # Before (broken)
 sa.Column("receipt_url", sqlmodel.sql.sqltypes.AutoString(), nullable=True)
@@ -164,6 +173,7 @@ sa.Column("receipt_url", sqlmodel.AutoString(), nullable=True)
 **Problem**: Pyright/Pylance shows errors like `Cannot access attribute "in_" for class "str"` on SQLModel queries.
 
 **Solution**: These are type checker limitations with SQLModel/SQLAlchemy, not actual runtime errors. The code works correctly. Options:
+
 - Ignore these specific errors
 - Add type: ignore comments
 - Use cast() for complex queries
@@ -174,7 +184,8 @@ sa.Column("receipt_url", sqlmodel.AutoString(), nullable=True)
 
 **Problem**: Landlords and tenants need separate auth flows but share the same token infrastructure.
 
-**Solution**: 
+**Solution**:
+
 - Separate routers: `auth.py` (landlords) and `tenant_auth.py` (tenants)
 - Separate dependencies: `get_current_landlord()` and `get_current_tenant()`
 - Token contains user type indicator
@@ -191,12 +202,14 @@ sa.Column("receipt_url", sqlmodel.AutoString(), nullable=True)
 **Decision**: Use manual receipt upload instead of Stripe/payment processors.
 
 **Rationale**:
+
 - Simpler implementation
 - No PCI compliance concerns
 - Works with any bank transfer method
 - Landlord maintains control over verification
 
 **Implementation**:
+
 - Tenant uploads image/PDF receipt
 - Backend saves to `uploads/receipts/`
 - Payment status changes to VERIFYING
@@ -207,6 +220,7 @@ sa.Column("receipt_url", sqlmodel.AutoString(), nullable=True)
 **Decision**: Use SQLite instead of PostgreSQL.
 
 **Rationale**:
+
 - Zero configuration
 - Single file database
 - Easy to reset/backup
@@ -219,11 +233,13 @@ sa.Column("receipt_url", sqlmodel.AutoString(), nullable=True)
 **Decision**: Store receipts locally in `backend/uploads/receipts/`.
 
 **Rationale**:
+
 - Simple for development
 - No cloud dependencies
 - Works offline
 
 **Production Consideration**: Migrate to S3/Cloud Storage for:
+
 - Scalability
 - Redundancy
 - CDN delivery
@@ -233,6 +249,7 @@ sa.Column("receipt_url", sqlmodel.AutoString(), nullable=True)
 **Decision**: Use SSE instead of WebSockets for real-time notifications.
 
 **Rationale**:
+
 - Simpler than WebSockets
 - One-way communication sufficient
 - Better browser support
@@ -300,12 +317,14 @@ sa.Column("receipt_url", sqlmodel.AutoString(), nullable=True)
 ### Running the Full Stack
 
 Terminal 1 (Backend):
+
 ```bash
 cd backend
 uvicorn app.main:app --reload
 ```
 
 Terminal 2 (Frontend):
+
 ```bash
 cd frontend
 npm run dev
@@ -385,3 +404,4 @@ If you encounter issues not covered here:
 2. Review recent commits for context
 3. Search codebase for similar patterns
 4. Document new learnings in this file
+5. Ask the user for clarity
