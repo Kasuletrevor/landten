@@ -18,6 +18,7 @@ class Property(SQLModel, table=True):
     name: str
     address: Optional[str] = None
     description: Optional[str] = None
+    grace_period_days: int = Field(default=5)  # Days after 1st that's still "on-time"
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
