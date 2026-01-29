@@ -457,6 +457,11 @@ class ApiClient {
 
     return () => eventSource.close();
   }
+
+  // Analytics
+  async getAnalytics() {
+    return this.request<DashboardAnalytics>("/analytics/dashboard");
+  }
 }
 
 // Types
@@ -653,6 +658,53 @@ export interface NotificationListResponse {
 export interface SSEEvent {
   type: string;
   data: Record<string, unknown>;
+}
+
+// Analytics Types
+export interface MonthlyStats {
+  month: string; // Format: "YYYY-MM"
+  expected: number;
+  received: number;
+  collection_rate: number; // Percentage 0-100
+}
+
+export interface CurrentMonthStats {
+  expected: number;
+  received: number;
+  outstanding: number;
+  collection_rate: number;
+}
+
+export interface VacancyStats {
+  total_rooms: number;
+  occupied: number;
+  vacant: number;
+  vacancy_rate: number; // Percentage 0-100
+}
+
+export interface OverdueSummary {
+  count: number;
+  total_amount: number;
+  oldest_days: number; // Days since oldest overdue payment
+}
+
+export interface TrendComparison {
+  current_value: number;
+  previous_value: number;
+  change_percent: number; // Positive = increase, Negative = decrease
+  is_improvement: boolean; // True if change is good
+}
+
+export interface DashboardAnalytics {
+  current_month: CurrentMonthStats;
+  trend: MonthlyStats[]; // 3 months, oldest first
+  vacancy: VacancyStats;
+  overdue_summary: OverdueSummary;
+  income_trend: TrendComparison;
+  collection_trend: TrendComparison;
+  vacancy_trend: TrendComparison;
+  primary_currency: string;
+  currency_note: string;
 }
 
 export const api = new ApiClient();
