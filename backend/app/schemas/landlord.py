@@ -14,6 +14,7 @@ class LandlordCreate(BaseModel):
 class LandlordUpdate(BaseModel):
     name: Optional[str] = None
     phone: Optional[str] = None
+    primary_currency: Optional[str] = None
 
 
 class LandlordLogin(BaseModel):
@@ -27,6 +28,7 @@ class LandlordResponse(BaseModel):
     email: str
     name: str
     phone: Optional[str] = None
+    primary_currency: str = "UGX"
     created_at: datetime
 
     class Config:
