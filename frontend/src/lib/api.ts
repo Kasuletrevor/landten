@@ -113,7 +113,7 @@ class ApiClient {
 
   async updateProperty(
     id: string,
-    data: { name?: string; address?: string; description?: string }
+    data: { name?: string; address?: string; description?: string; grace_period_days?: number }
   ) {
     return this.request<Property>(`/properties/${id}`, {
       method: "PUT",
@@ -485,6 +485,7 @@ export interface Property {
   name: string;
   address: string;
   description?: string;
+  grace_period_days: number;
   created_at: string;
   updated_at: string;
 }
