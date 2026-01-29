@@ -13,6 +13,7 @@ from sqlmodel import Session
 from app.core.config import settings
 from app.core.database import engine
 from app.routers import (
+    analytics,
     auth,
     properties,
     rooms,
@@ -122,6 +123,7 @@ app.include_router(rooms.router, prefix="/api")
 app.include_router(tenants.router, prefix="/api")
 app.include_router(payments.router, prefix="/api")
 app.include_router(notifications.router, prefix="/api")
+app.include_router(analytics.router, prefix="/api")
 
 # Mount static files for uploads
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
