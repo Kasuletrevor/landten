@@ -692,9 +692,18 @@ function EditPropertyModal({
     name: property.name,
     address: property.address,
     description: property.description || "",
+    grace_period_days: property.grace_period_days || 5,
   });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+
+  const gracePeriodOptions = [
+    { value: 3, label: "3 days" },
+    { value: 5, label: "5 days (Recommended)" },
+    { value: 7, label: "7 days" },
+    { value: 10, label: "10 days" },
+    { value: 14, label: "14 days" },
+  ];
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -779,6 +788,32 @@ function EditPropertyModal({
                 }
                 className="input min-h-[100px]"
               />
+            </div>
+
+            <div>
+              <label htmlFor="grace_period" className="label">
+                Grace Period
+              </label>
+              <p className="text-xs text-[var(--text-muted)] mb-2">
+                Number of days after due date that payments are still considered on-time
+              </p>
+              <select
+                id="grace_period"
+                value={formData.grace_period_days}
+                onChange={(e) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    grace_period_days: parseInt(e.target.value),
+                  }))
+                }
+                className="input"
+              >
+                {gracePeriodOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 
