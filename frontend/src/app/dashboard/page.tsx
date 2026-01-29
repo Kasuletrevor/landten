@@ -4,8 +4,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import api, {
   PropertyListResponse,
-  PaymentSummary,
   PaymentWithTenant,
+  DashboardAnalytics,
 } from "@/lib/api";
 import {
   Building2,
@@ -17,11 +17,14 @@ import {
   ArrowDownRight,
   ChevronRight,
   TrendingUp,
+  Home,
+  BarChart3,
 } from "lucide-react";
+import TrendChart from "@/components/trend-chart";
 
 export default function DashboardPage() {
   const [properties, setProperties] = useState<PropertyListResponse | null>(null);
-  const [summary, setSummary] = useState<PaymentSummary | null>(null);
+  const [analytics, setAnalytics] = useState<DashboardAnalytics | null>(null);
   const [overduePayments, setOverduePayments] = useState<PaymentWithTenant[]>([]);
   const [upcomingPayments, setUpcomingPayments] = useState<PaymentWithTenant[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -29,14 +32,14 @@ export default function DashboardPage() {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [propertiesRes, summaryRes, overdueRes, upcomingRes] = await Promise.all([
+        const [propertiesRes, analyticsRes, overdueRes, upcomingRes] = await Promise.all([
           api.getProperties(),
-          api.getPaymentsSummary(),
+          api.getAnalytics(),
           api.getOverduePayments(),
           api.getUpcomingPayments(7),
         ]);
         setProperties(propertiesRes);
-        setSummary(summaryRes);
+        setAnalytics(analyticsRes);
         setOverduePayments(overdueRes.payments);
         setUpcomingPayments(upcomingRes.payments);
       } catch (error) {
@@ -59,18 +62,15 @@ export default function DashboardPage() {
 
   const totalTenants =
     properties?.properties.reduce((acc, p) => acc + p.total_tenants, 0) || 0;
-  const monthlyIncome =
-    properties?.properties.reduce((acc, p) => acc + p.monthly_expected_income, 0) ||
-    0;
-  const collectionRate =
-    summary && summary.total_expected > 0
-      ? ((summary.total_received / summary.total_expected) * 100).toFixed(0)
-      : "0";
 
-  const formatCurrency = (amount: number) => {
+  const formatCurrency = (amount: number, currency?: string) => {
+    const curr = currency || analytics?.primary_currency || "UGX";
+    if (["UGX", "KES", "TZS", "RWF"].includes(curr)) {
+      return `${curr} ${amount.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+    }
     return new Intl.NumberFormat("en-US", {
       style: "currency",
-      currency: "USD",
+      currency: curr,
       minimumFractionDigits: 0,
       maximumFractionDigits: 0,
     }).format(amount);
@@ -83,6 +83,21 @@ export default function DashboardPage() {
     });
   };
 
+  // Get trend indicator
+  const getTrendIndicator = (trend: { change_percent: number; is_improvement: boolean } | null) => {
+    if (!trend) return null;
+    const isUp = trend.change_percent > 0;
+    const isGood = trend.is_improvement;
+    return {
+      value: Math.abs(trend.change_percent).toFixed(0),
+      up: isUp,
+      color: isGood ? "stat-trend-up" : "stat-trend-down",
+    };
+  };
+
+  const incomeTrend = getTrendIndicator(analytics?.income_trend || null);
+  const collectionTrend = getTrendIndicator(analytics?.collection_trend || null);
+
   return (
     <div className="animate-fade-in">
       {/* Header */}
@@ -93,6 +108,11 @@ export default function DashboardPage() {
           </h1>
           <p className="page-subtitle">
             Welcome back! Here&apos;s an overview of your properties.
+            {analytics && (
+              <span className="text-xs ml-2 text-[var(--text-muted)]">
+                ({analytics.currency_note})
+              </span>
+            )}
           </p>
         </div>
         <Link href="/dashboard/properties" className="btn btn-primary">
@@ -119,17 +139,17 @@ export default function DashboardPage() {
             color: "info",
           },
           {
-            label: "Monthly Income",
-            value: formatCurrency(monthlyIncome),
+            label: "Income This Month",
+            value: formatCurrency(analytics?.current_month.received || 0),
             icon: CreditCard,
-            trend: { value: 12, up: true },
+            trend: incomeTrend,
             color: "success",
           },
           {
             label: "Collection Rate",
-            value: `${collectionRate}%`,
+            value: `${(analytics?.current_month.collection_rate || 0).toFixed(0)}%`,
             icon: TrendingUp,
-            trend: null,
+            trend: collectionTrend,
             color: "warning",
           },
         ].map((stat, i) => (
@@ -153,11 +173,7 @@ export default function DashboardPage() {
                 <stat.icon className="w-5 h-5" />
               </div>
               {stat.trend && (
-                <div
-                  className={`stat-trend ${
-                    stat.trend.up ? "stat-trend-up" : "stat-trend-down"
-                  }`}
-                >
+                <div className={`stat-trend ${stat.trend.color}`}>
                   {stat.trend.up ? (
                     <ArrowUpRight className="w-3 h-3" />
                   ) : (
@@ -173,10 +189,121 @@ export default function DashboardPage() {
         ))}
       </div>
 
+      {/* Secondary Stats - Vacancy & Outstanding */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+        <div className="card p-5 animate-slide-up stagger-1">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-9 h-9 rounded-lg bg-[var(--accent-100)] text-[var(--accent-600)] flex items-center justify-center">
+              <Home className="w-4.5 h-4.5" />
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                Vacancy Rate
+              </p>
+              <p className="text-xl font-bold" style={{ fontFamily: "var(--font-outfit)" }}>
+                {(analytics?.vacancy.vacancy_rate || 0).toFixed(0)}%
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 text-sm text-[var(--text-secondary)]">
+            <span className="font-medium text-[var(--success)]">
+              {analytics?.vacancy.occupied || 0}
+            </span>
+            <span>occupied</span>
+            <span className="text-[var(--text-muted)]">/</span>
+            <span className="font-medium text-[var(--text-muted)]">
+              {analytics?.vacancy.vacant || 0}
+            </span>
+            <span>vacant</span>
+            <span className="text-[var(--text-muted)]">of</span>
+            <span>{analytics?.vacancy.total_rooms || 0} rooms</span>
+          </div>
+        </div>
+
+        <div className="card p-5 animate-slide-up stagger-2">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-9 h-9 rounded-lg bg-[var(--warning-light)] text-[var(--warning)] flex items-center justify-center">
+              <Clock className="w-4.5 h-4.5" />
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                Outstanding
+              </p>
+              <p className="text-xl font-bold" style={{ fontFamily: "var(--font-outfit)" }}>
+                {formatCurrency(analytics?.current_month.outstanding || 0)}
+              </p>
+            </div>
+          </div>
+          <p className="text-sm text-[var(--text-secondary)]">
+            Expected: {formatCurrency(analytics?.current_month.expected || 0)}
+          </p>
+        </div>
+
+        <div className="card p-5 animate-slide-up stagger-3">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-9 h-9 rounded-lg bg-[var(--error-light)] text-[var(--error)] flex items-center justify-center">
+              <AlertTriangle className="w-4.5 h-4.5" />
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                Overdue
+              </p>
+              <p className="text-xl font-bold" style={{ fontFamily: "var(--font-outfit)" }}>
+                {analytics?.overdue_summary.count || 0} payments
+              </p>
+            </div>
+          </div>
+          <p className="text-sm text-[var(--text-secondary)]">
+            {analytics?.overdue_summary.count ? (
+              <>
+                Total: {formatCurrency(analytics.overdue_summary.total_amount)}
+                {analytics.overdue_summary.oldest_days > 0 && (
+                  <span className="text-[var(--error)]">
+                    {" "}· oldest {analytics.overdue_summary.oldest_days} days
+                  </span>
+                )}
+              </>
+            ) : (
+              "No overdue payments"
+            )}
+          </p>
+        </div>
+      </div>
+
+      {/* Collection Trend Chart */}
+      {analytics && analytics.trend.length > 0 && (
+        <div className="card mb-8 animate-slide-up stagger-4">
+          <div className="p-4 border-b border-[var(--border)] flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <BarChart3 className="w-5 h-5 text-[var(--primary-600)]" />
+              <h3
+                className="font-semibold"
+                style={{ fontFamily: "var(--font-outfit)" }}
+              >
+                Collection Trend
+              </h3>
+            </div>
+            <div className="flex items-center gap-4 text-xs text-[var(--text-muted)]">
+              <div className="flex items-center gap-1.5">
+                <div className="w-3 h-3 rounded bg-[var(--neutral-300)]" />
+                <span>Expected</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <div className="w-3 h-3 rounded bg-[var(--primary-500)]" />
+                <span>Received</span>
+              </div>
+            </div>
+          </div>
+          <div className="p-4">
+            <TrendChart data={analytics.trend} currency={analytics.primary_currency} />
+          </div>
+        </div>
+      )}
+
       {/* Content Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Overdue Payments */}
-        <div className="card animate-slide-up stagger-2">
+        <div className="card animate-slide-up stagger-5">
           <div className="p-4 border-b border-[var(--border)] flex items-center justify-between">
             <div className="flex items-center gap-2">
               <AlertTriangle className="w-5 h-5 text-[var(--error)]" />
@@ -235,7 +362,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Upcoming Payments */}
-        <div className="card animate-slide-up stagger-3">
+        <div className="card animate-slide-up stagger-6">
           <div className="p-4 border-b border-[var(--border)] flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Clock className="w-5 h-5 text-[var(--primary-600)]" />
@@ -292,7 +419,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Properties Overview */}
-        <div className="card lg:col-span-2 animate-slide-up stagger-4">
+        <div className="card lg:col-span-2 animate-slide-up" style={{ animationDelay: "0.35s" }}>
           <div className="p-4 border-b border-[var(--border)] flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Building2 className="w-5 h-5 text-[var(--primary-600)]" />
