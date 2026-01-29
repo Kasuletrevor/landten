@@ -51,6 +51,12 @@ class PaymentResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+    # Computed fields for UI display
+    days_until_due: Optional[int] = (
+        None  # Positive = days until due, Negative = days overdue
+    )
+    days_overdue: Optional[int] = None  # Only positive when overdue, None otherwise
+
     class Config:
         from_attributes = True
 
@@ -64,6 +70,7 @@ class PaymentWithTenant(PaymentResponse):
     room_name: Optional[str] = None
     property_id: Optional[str] = None
     property_name: Optional[str] = None
+    currency: Optional[str] = None  # Room's currency for proper formatting
 
 
 class PaymentListResponse(BaseModel):
