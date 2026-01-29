@@ -306,6 +306,9 @@ export default function TenantDetailPage() {
 
         {/* Right Column - Payments */}
         <div className="lg:col-span-2 space-y-6">
+          {/* Payment Status Banner */}
+          <PaymentStatusBanner payments={tenant.payments} roomCurrency={tenant.room?.currency} />
+
           {/* Stats */}
           <div className="grid grid-cols-3 gap-4">
             {[
@@ -536,6 +539,103 @@ function getOrdinalSuffix(n: number): string {
   const s = ["th", "st", "nd", "rd"];
   const v = n % 100;
   return s[(v - 20) % 10] || s[v] || s[0];
+}
+
+function PaymentStatusBanner({
+  payments,
+  roomCurrency,
+}: {
+  payments: Payment[];
+  roomCurrency?: string;
+}) {
+  // Find next actionable payment (upcoming, pending, or overdue)
+  const nextPayment = payments.find((p) =>
+    ["UPCOMING", "PENDING", "OVERDUE"].includes(p.status)
+  );
+
+  if (!nextPayment) return null;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const dueDate = new Date(nextPayment.due_date);
+  dueDate.setHours(0, 0, 0, 0);
+  const diffDays = Math.ceil(
+    (dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
+  );
+
+  const isOverdue = diffDays < 0;
+  const isDueSoon = diffDays >= 0 && diffDays <= 5;
+
+  // Determine styling based on status
+  const bgColor = isOverdue
+    ? "bg-[var(--error-light)]"
+    : isDueSoon
+    ? "bg-[var(--warning-light)]"
+    : "bg-[var(--success-light)]";
+  const textColor = isOverdue
+    ? "text-[var(--error)]"
+    : isDueSoon
+    ? "text-[var(--warning)]"
+    : "text-[var(--success)]";
+  const IconComponent = isOverdue ? AlertTriangle : isDueSoon ? Clock : Calendar;
+
+  const message = isOverdue
+    ? `Rent overdue by ${Math.abs(diffDays)} day${Math.abs(diffDays) !== 1 ? "s" : ""}`
+    : diffDays === 0
+    ? "Rent due today"
+    : `Rent due in ${diffDays} day${diffDays !== 1 ? "s" : ""}`;
+
+  const formatBannerCurrency = (amount: number, currency?: string) => {
+    const curr = currency || "UGX";
+    if (["UGX", "KES", "TZS", "RWF"].includes(curr)) {
+      return `${curr} ${amount.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+    }
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: curr,
+      minimumFractionDigits: 0,
+    }).format(amount);
+  };
+
+  const formatBannerDate = (dateStr: string) => {
+    return new Date(dateStr).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  };
+
+  return (
+    <div className={`card ${bgColor} border-none animate-slide-up`}>
+      <div className="p-5 flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <div
+            className={`w-12 h-12 rounded-xl ${bgColor} flex items-center justify-center`}
+          >
+            <IconComponent className={`w-6 h-6 ${textColor}`} />
+          </div>
+          <div>
+            <p
+              className={`font-semibold ${textColor}`}
+              style={{ fontFamily: "var(--font-outfit)" }}
+            >
+              {message}
+            </p>
+            <p className="text-sm text-[var(--text-secondary)]">
+              {formatBannerCurrency(nextPayment.amount_due, roomCurrency)} due{" "}
+              {formatBannerDate(nextPayment.due_date)}
+            </p>
+          </div>
+        </div>
+        <Link
+          href={`/dashboard/payments?tenant_id=${nextPayment.tenant_id}`}
+          className="btn btn-secondary btn-sm"
+        >
+          View Payments
+        </Link>
+      </div>
+    </div>
+  );
 }
 
 function EditTenantModal({
