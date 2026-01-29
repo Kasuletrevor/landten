@@ -140,10 +140,29 @@ def verify_payment_access(
 
 
 def enrich_payment_with_tenant(payment: Payment, session: Session) -> PaymentWithTenant:
-    """Add tenant and property info to a payment."""
+    """Add tenant and property info to a payment, including computed date fields."""
     tenant = session.get(Tenant, payment.tenant_id)
     room = session.get(Room, tenant.room_id) if tenant else None
     property = session.get(Property, room.property_id) if room else None
+
+    # Compute days_until_due and days_overdue
+    today = date.today()
+    days_until_due = None
+    days_overdue = None
+
+    # Only compute for unpaid payments
+    if payment.status not in [
+        PaymentStatus.ON_TIME,
+        PaymentStatus.LATE,
+        PaymentStatus.WAIVED,
+    ]:
+        delta = (payment.due_date - today).days
+        days_until_due = delta  # Positive = future, Negative = past
+
+        if delta < 0:
+            days_overdue = abs(delta)  # Days since due date
+        else:
+            days_overdue = None
 
     return PaymentWithTenant(
         **payment.model_dump(),
@@ -153,6 +172,9 @@ def enrich_payment_with_tenant(payment: Payment, session: Session) -> PaymentWit
         room_name=room.name if room else None,
         property_id=property.id if property else None,
         property_name=property.name if property else None,
+        currency=room.currency if room else None,
+        days_until_due=days_until_due,
+        days_overdue=days_overdue,
     )
 
 
