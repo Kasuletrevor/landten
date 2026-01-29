@@ -8,12 +8,14 @@ class PropertyCreate(BaseModel):
     name: str
     address: Optional[str] = None
     description: Optional[str] = None
+    grace_period_days: int = 5  # Default 5 days grace period
 
 
 class PropertyUpdate(BaseModel):
     name: Optional[str] = None
     address: Optional[str] = None
     description: Optional[str] = None
+    grace_period_days: Optional[int] = None
 
 
 # Response schemas
@@ -23,6 +25,7 @@ class PropertyResponse(BaseModel):
     name: str
     address: Optional[str] = None
     description: Optional[str] = None
+    grace_period_days: int = 5
     created_at: datetime
     updated_at: datetime
 
