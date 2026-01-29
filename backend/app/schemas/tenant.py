@@ -13,11 +13,14 @@ class TenantCreate(BaseModel):
     move_in_date: date
     notes: Optional[str] = None
 
-    # Optional: create payment schedule at the same time
-    payment_amount: Optional[float] = None
+    # Payment schedule options
+    # If auto_create_schedule is True (default), creates schedule using room rent
+    # If payment_amount is provided, uses that instead of room rent
+    auto_create_schedule: bool = True
+    payment_amount: Optional[float] = None  # Override room rent if provided
     payment_frequency: Optional[PaymentFrequency] = PaymentFrequency.MONTHLY
-    payment_due_day: Optional[int] = 1
-    payment_window_days: Optional[int] = 5
+    payment_due_day: Optional[int] = 1  # 1st of month (standard)
+    payment_window_days: Optional[int] = None  # Will use property's grace_period_days
 
 
 class TenantUpdate(BaseModel):
