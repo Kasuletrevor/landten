@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
 from typing import Optional
 from datetime import datetime, date, timezone
+from dateutil.relativedelta import relativedelta
 
 from app.core.database import get_session
 from app.core.security import (
@@ -28,6 +29,10 @@ from app.schemas.payment_schedule import (
     PaymentScheduleCreate,
     PaymentScheduleUpdate,
     PaymentScheduleResponse,
+)
+from app.services.payment_service import (
+    create_prorated_payment,
+    generate_payment_for_schedule,
 )
 
 router = APIRouter(prefix="/tenants", tags=["Tenants"])
@@ -141,7 +146,14 @@ async def create_tenant(
 ):
     """
     Create a new tenant and assign to a room.
-    Optionally create a payment schedule at the same time.
+
+    By default (auto_create_schedule=True), automatically:
+    1. Creates a payment schedule using the room's rent amount
+    2. Uses the property's grace_period_days for the payment window
+    3. Creates a prorated payment if move-in is after the 5th of the month
+    4. Generates the first scheduled payment
+
+    Set auto_create_schedule=False to skip automatic schedule creation.
     """
     room, property = verify_room_access(
         tenant_data.room_id, current_landlord.id, session
@@ -174,18 +186,52 @@ async def create_tenant(
     room.is_occupied = True
     session.add(room)
 
-    # Create payment schedule if provided
+    # Create payment schedule if auto_create_schedule is True or payment_amount provided
     schedule = None
-    if tenant_data.payment_amount:
+    prorated_payment = None
+
+    if tenant_data.auto_create_schedule or tenant_data.payment_amount:
+        # Determine the rent amount (explicit or from room)
+        rent_amount = tenant_data.payment_amount or room.rent_amount
+
+        # Determine window days (explicit, from property, or default 5)
+        window_days = tenant_data.payment_window_days or property.grace_period_days
+
+        # Calculate schedule start date
+        # If move-in is on 1st-5th, schedule starts this month
+        # If move-in is after 5th, schedule starts next month (1st)
+        move_in = tenant_data.move_in_date
+        if move_in.day <= 5:
+            schedule_start = date(move_in.year, move_in.month, 1)
+        else:
+            # Start from 1st of next month
+            next_month = move_in + relativedelta(months=1)
+            schedule_start = date(next_month.year, next_month.month, 1)
+
+        # Create the payment schedule
         schedule = PaymentSchedule(
             tenant_id=tenant.id,
-            amount=tenant_data.payment_amount,
+            amount=rent_amount,
             frequency=tenant_data.payment_frequency or PaymentFrequency.MONTHLY,
             due_day=tenant_data.payment_due_day or 1,
-            window_days=tenant_data.payment_window_days or 5,
-            start_date=tenant_data.move_in_date,
+            window_days=window_days,
+            start_date=schedule_start,
         )
         session.add(schedule)
+        session.commit()
+        session.refresh(schedule)
+
+        # Create prorated payment if move-in is after 5th
+        if move_in.day > 5:
+            prorated_payment = create_prorated_payment(
+                tenant_id=tenant.id,
+                monthly_rent=rent_amount,
+                move_in_date=move_in,
+                session=session,
+            )
+
+        # Generate the first scheduled payment
+        generate_payment_for_schedule(schedule, session, force=True)
 
     session.commit()
     session.refresh(tenant)
@@ -198,7 +244,7 @@ async def create_tenant(
         rent_amount=room.rent_amount,
         has_payment_schedule=schedule is not None,
         has_portal_access=tenant.password_hash is not None,
-        pending_payments=0,
+        pending_payments=1 if prorated_payment else 0,
         overdue_payments=0,
     )
 
