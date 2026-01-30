@@ -16,7 +16,8 @@ import {
   Ban,
   Calendar,
   User,
-  DollarSign
+  DollarSign,
+  FileSearch
 } from "lucide-react";
 
 export default function TenantDashboardPage() {
@@ -66,10 +67,14 @@ export default function TenantDashboardPage() {
     router.push("/tenant/login");
   };
 
-  const formatCurrency = (amount: number) => {
+  const formatCurrency = (amount: number, currency?: string) => {
+    const curr = currency || tenant?.room_currency || "UGX";
+    if (["UGX", "KES", "TZS", "RWF"].includes(curr)) {
+      return `${curr} ${amount.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+    }
     return new Intl.NumberFormat("en-US", {
       style: "currency",
-      currency: "USD",
+      currency: curr,
       minimumFractionDigits: 0,
     }).format(amount);
   };
@@ -161,6 +166,13 @@ export default function TenantDashboardPage() {
           </p>
         </section>
 
+        {/* Payment Status Banner */}
+        <PaymentStatusBanner 
+          payments={payments} 
+          roomCurrency={tenant.room_currency}
+          onUploadClick={setUploadPayment}
+        />
+
         {/* Stats Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
            {/* Pending/Due */}
@@ -202,8 +214,13 @@ export default function TenantDashboardPage() {
                  <Home className="w-6 h-6 text-[var(--primary-700)]" />
               </div>
               <div className="min-w-0">
-                 <p className="text-sm text-[var(--text-muted)]">Room</p>
-                 <p className="text-lg font-bold truncate">{tenant.room_name}</p>
+                 <p className="text-sm text-[var(--text-muted)]">Monthly Rent</p>
+                 <p className="text-lg font-bold truncate">
+                   {tenant.rent_amount ? formatCurrency(tenant.rent_amount) : tenant.room_name}
+                 </p>
+                 {tenant.rent_amount && (
+                   <p className="text-xs text-[var(--text-muted)]">{tenant.room_name}</p>
+                 )}
               </div>
            </div>
         </div>
@@ -316,6 +333,105 @@ export default function TenantDashboardPage() {
           }}
         />
       )}
+    </div>
+  );
+}
+
+function PaymentStatusBanner({
+  payments,
+  roomCurrency,
+  onUploadClick,
+}: {
+  payments: Payment[];
+  roomCurrency?: string;
+  onUploadClick: (payment: Payment) => void;
+}) {
+  // Find next actionable payment (upcoming, pending, or overdue)
+  const nextPayment = payments.find((p) =>
+    ["UPCOMING", "PENDING", "OVERDUE"].includes(p.status)
+  );
+
+  if (!nextPayment) return null;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const dueDate = new Date(nextPayment.due_date);
+  dueDate.setHours(0, 0, 0, 0);
+  const diffDays = Math.ceil(
+    (dueDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)
+  );
+
+  const isOverdue = diffDays < 0;
+  const isDueSoon = diffDays >= 0 && diffDays <= 5;
+
+  // Determine styling based on status
+  const bgColor = isOverdue
+    ? "bg-[var(--error-light)]"
+    : isDueSoon
+    ? "bg-[var(--warning-light)]"
+    : "bg-[var(--success-light)]";
+  const textColor = isOverdue
+    ? "text-[var(--error)]"
+    : isDueSoon
+    ? "text-[var(--warning)]"
+    : "text-[var(--success)]";
+  const IconComponent = isOverdue ? AlertTriangle : isDueSoon ? Clock : Calendar;
+
+  const message = isOverdue
+    ? `Rent overdue by ${Math.abs(diffDays)} day${Math.abs(diffDays) !== 1 ? "s" : ""}`
+    : diffDays === 0
+    ? "Rent due today"
+    : `Rent due in ${diffDays} day${diffDays !== 1 ? "s" : ""}`;
+
+  const formatBannerCurrency = (amount: number, currency?: string) => {
+    const curr = currency || "UGX";
+    if (["UGX", "KES", "TZS", "RWF"].includes(curr)) {
+      return `${curr} ${amount.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+    }
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: curr,
+      minimumFractionDigits: 0,
+    }).format(amount);
+  };
+
+  const formatBannerDate = (dateStr: string) => {
+    return new Date(dateStr).toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  };
+
+  return (
+    <div className={`card ${bgColor} border-none animate-slide-up`}>
+      <div className="p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-4">
+          <div
+            className={`w-12 h-12 rounded-xl ${bgColor} flex items-center justify-center flex-shrink-0`}
+          >
+            <IconComponent className={`w-6 h-6 ${textColor}`} />
+          </div>
+          <div>
+            <p
+              className={`font-semibold ${textColor}`}
+              style={{ fontFamily: "var(--font-outfit)" }}
+            >
+              {message}
+            </p>
+            <p className="text-sm text-[var(--text-secondary)]">
+              {formatBannerCurrency(nextPayment.amount_due, roomCurrency)} due{" "}
+              {formatBannerDate(nextPayment.due_date)}
+            </p>
+          </div>
+        </div>
+        <button
+          onClick={() => onUploadClick(nextPayment)}
+          className={`btn ${isOverdue ? "btn-danger" : "btn-primary"} btn-sm whitespace-nowrap`}
+        >
+          Upload Receipt
+        </button>
+      </div>
     </div>
   );
 }
