@@ -65,7 +65,16 @@ def test_list_payments_success(
     # Assert
     assert response.status_code == 200
     data = response.json()
-    assert data["status"].lower() == "verifying"
+    assert "payments" in data
+    assert "total" in data
+    assert data["total"] >= 2
+
+    # Check payment with tenant info
+    payment_data = data["payments"][0]
+    assert "tenant_name" in payment_data
+    assert "property_name" in payment_data
+    assert "room_name" in payment_data
+    assert "currency" in payment_data
 
 
 def test_upload_receipt_invalid_file_type(
