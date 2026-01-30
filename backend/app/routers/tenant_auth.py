@@ -49,6 +49,8 @@ def get_tenant_portal_response(
         move_out_date=tenant.move_out_date,
         is_active=tenant.is_active,
         room_name=room.name if room else None,
+        room_currency=room.currency if room else None,
+        rent_amount=room.rent_amount if room else None,
         property_name=property_obj.name if property_obj else None,
         landlord_name=landlord.name if landlord else None,
         has_portal_access=tenant.password_hash is not None,
