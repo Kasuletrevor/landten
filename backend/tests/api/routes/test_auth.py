@@ -39,7 +39,7 @@ def test_register_landlord_success(client: TestClient, session: Session):
 
 
 def test_register_duplicate_email_fails(
-    client: TestClient, session: Session, auth_landlord: Landlord
+    client: TestClient, session: Session, auth_landlord
 ):
     """Test registering with duplicate email fails."""
     register_data = {
@@ -123,7 +123,7 @@ def test_register_password_stored_hashed(client: TestClient, session: Session):
 # =============================================================================
 
 
-def test_login_success(client: TestClient, auth_landlord: Landlord, test_password: str):
+def test_login_success(client: TestClient, auth_landlord, test_password: str):
     """Test logging in with valid credentials."""
     login_data = {
         "email": auth_landlord.email,
@@ -141,7 +141,7 @@ def test_login_success(client: TestClient, auth_landlord: Landlord, test_passwor
     assert data["landlord"]["email"] == auth_landlord.email
 
 
-def test_login_invalid_password(client: TestClient, auth_landlord: Landlord):
+def test_login_invalid_password(client: TestClient, auth_landlord):
     """Test logging in with invalid password fails."""
     login_data = {
         "email": auth_landlord.email,
@@ -207,9 +207,7 @@ def test_login_after_register(client: TestClient, session: Session):
 # =============================================================================
 
 
-def test_get_profile_success(
-    client: TestClient, auth_landlord: Landlord, auth_headers: dict
-):
+def test_get_profile_success(client: TestClient, auth_landlord, auth_headers: dict):
     """Test getting current landlord profile."""
     response = client.get("/api/auth/me", headers=auth_headers)
 
@@ -237,7 +235,7 @@ def test_get_profile_invalid_token(client: TestClient):
 
 
 def test_update_profile_success(
-    client: TestClient, auth_landlord: Landlord, auth_headers: dict, session: Session
+    client: TestClient, auth_landlord, auth_headers: dict, session: Session
 ):
     """Test updating landlord profile."""
     update_data = {
@@ -259,7 +257,7 @@ def test_update_profile_success(
 
 
 def test_update_profile_partial(
-    client: TestClient, auth_landlord: Landlord, auth_headers: dict, session: Session
+    client: TestClient, auth_landlord, auth_headers: dict, session: Session
 ):
     """Test updating only name."""
     original_phone = auth_landlord.phone
@@ -284,7 +282,7 @@ def test_update_profile_unauthorized(client: TestClient):
 
 
 def test_update_profile_invalid_data(
-    client: TestClient, auth_landlord: Landlord, auth_headers: dict
+    client: TestClient, auth_landlord, auth_headers: dict
 ):
     """Test updating with invalid data types fails."""
     # Try to update email (should not be allowed or should fail validation)
@@ -303,9 +301,7 @@ def test_update_profile_invalid_data(
 # =============================================================================
 
 
-def test_token_expiration(
-    client: TestClient, auth_landlord: Landlord, test_password: str
-):
+def test_token_expiration(client: TestClient, auth_landlord, test_password: str):
     """Test that token works immediately after login."""
     # Login to get token
     login_data = {"email": auth_landlord.email, "password": test_password}
@@ -321,7 +317,7 @@ def test_token_expiration(
     assert profile_response.json()["email"] == auth_landlord.email
 
 
-def test_token_format(client: TestClient, auth_landlord: Landlord, test_password: str):
+def test_token_format(client: TestClient, auth_landlord, test_password: str):
     """Test that token has proper JWT format (3 parts separated by dots)."""
     login_data = {"email": auth_landlord.email, "password": test_password}
     response = client.post("/api/auth/login", json=login_data)
@@ -374,9 +370,7 @@ def test_register_unicode_password(client: TestClient, session: Session):
     assert login_response.status_code == 200
 
 
-def test_concurrent_requests(
-    client: TestClient, auth_landlord: Landlord, auth_headers: dict
-):
+def test_concurrent_requests(client: TestClient, auth_landlord, auth_headers: dict):
     """Test that multiple concurrent profile requests work."""
     # Make multiple requests in quick succession
     responses = []
