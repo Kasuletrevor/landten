@@ -5,9 +5,8 @@ Tests registration, login, profile access, and updates.
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlmodel import Session
+from sqlmodel import Session, select
 
-from app.models.landlord import Landlord
 from app.core.security import verify_password
 
 
@@ -94,6 +93,8 @@ def test_register_invalid_email_format(client: TestClient):
 
 def test_register_password_stored_hashed(client: TestClient, session: Session):
     """Test that password is stored hashed, not plaintext."""
+    from sqlmodel import select as sqlmodel_select
+
     register_data = {
         "email": "hashtest@landlord.com",
         "password": "securepassword123",
@@ -105,8 +106,12 @@ def test_register_password_stored_hashed(client: TestClient, session: Session):
     assert response.status_code == 201
 
     # Verify password is hashed in database
+    from app.models.landlord import Landlord as LandlordModel
+
     landlord = session.exec(
-        select(Landlord).where(Landlord.email == "hashtest@landlord.com")
+        sqlmodel_select(LandlordModel).where(
+            LandlordModel.email == "hashtest@landlord.com"
+        )
     ).first()
     assert landlord is not None
     assert landlord.password_hash != "securepassword123"
