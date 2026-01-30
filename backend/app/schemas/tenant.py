@@ -80,6 +80,8 @@ class TenantPortalResponse(BaseModel):
     move_out_date: Optional[date] = None
     is_active: bool
     room_name: Optional[str] = None
+    room_currency: Optional[str] = None
+    rent_amount: Optional[float] = None
     property_name: Optional[str] = None
     landlord_name: Optional[str] = None
     has_portal_access: bool = False
