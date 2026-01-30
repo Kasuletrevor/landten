@@ -565,6 +565,8 @@ export interface TenantPortalResponse {
   move_out_date?: string;
   is_active: boolean;
   room_name?: string;
+  room_currency?: string;
+  rent_amount?: number;
   property_name?: string;
   landlord_name?: string;
   has_portal_access: boolean;
