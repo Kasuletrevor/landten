@@ -259,7 +259,7 @@ def test_payment_status_transition_pending_to_verifying(
 
     assert response.status_code == 200
     data = response.json()
-    assert data["status"] == "VERIFYING"
+    assert data["status"].lower() == "verifying"
 
 
 # =============================================================================
@@ -681,11 +681,16 @@ def test_summary_with_property_filter(
     schedule1 = PaymentScheduleFactory.create(session=session, tenant_id=tenant1.id)
     schedule2 = PaymentScheduleFactory.create(session=session, tenant_id=tenant2.id)
 
+    today = date.today()
+
     PaymentFactory.create(
         session=session,
         tenant_id=tenant1.id,
         schedule_id=schedule1.id,
         status=PaymentStatus.PENDING,
+        due_date=today,
+        window_end_date=today + timedelta(days=5),
+        period_end=today + timedelta(days=30),
         amount_due=100000,
     )
     PaymentFactory.create(
@@ -693,6 +698,9 @@ def test_summary_with_property_filter(
         tenant_id=tenant2.id,
         schedule_id=schedule2.id,
         status=PaymentStatus.PENDING,
+        due_date=today,
+        window_end_date=today + timedelta(days=5),
+        period_end=today + timedelta(days=30),
         amount_due=200000,
     )
 

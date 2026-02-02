@@ -1,11 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi.responses import FileResponse
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlmodel import Session, select
 from typing import Optional, List
 from datetime import datetime, date, timezone
 from dateutil.relativedelta import relativedelta
+import mimetypes
 
 from app.core.database import get_session
-from app.core.security import get_current_landlord, get_current_tenant
+from app.core.security import decode_token, get_current_landlord, get_current_tenant
 from app.models.landlord import Landlord
 from app.models.property import Property
 from app.models.room import Room
@@ -17,7 +20,6 @@ from app.schemas.payment import (
     PaymentWaive,
     PaymentUpdate,
     ManualPaymentCreate,
-    PaymentResponse,
     PaymentWithTenant,
     PaymentListResponse,
     PaymentSummary,
@@ -28,7 +30,68 @@ import os
 import uuid
 from typing import Annotated
 
+
+_receipt_auth_scheme = HTTPBearer()
+
 router = APIRouter(prefix="/payments", tags=["Payments"])
+
+
+def _resolve_receipt_file_path(receipt_url: str) -> str:
+    """Resolve a receipt_url to a safe local file path."""
+    # We only support serving receipts from our mounted uploads path.
+    if not receipt_url or not receipt_url.startswith("/uploads/receipts/"):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Receipt not found"
+        )
+
+    filename = os.path.basename(receipt_url)
+    if not filename:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Receipt not found"
+        )
+
+    base_dir = os.path.normpath(os.path.join("uploads", "receipts"))
+    file_path = os.path.normpath(os.path.join(base_dir, filename))
+
+    # Prevent path traversal.
+    if os.path.commonpath([base_dir, file_path]) != base_dir:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Receipt not found"
+        )
+
+    return file_path
+
+
+async def _get_current_receipt_viewer(
+    credentials: HTTPAuthorizationCredentials = Depends(_receipt_auth_scheme),
+    session: Session = Depends(get_session),
+):
+    """Authenticate either landlord or tenant for receipt viewing."""
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+    payload = decode_token(credentials.credentials)
+    if payload is None:
+        raise credentials_exception
+
+    token_type = payload.get("type", "landlord")
+    user_id = payload.get("sub")
+    if not user_id:
+        raise credentials_exception
+
+    if token_type == "tenant":
+        tenant = session.get(Tenant, user_id)
+        if tenant is None or not tenant.is_active:
+            raise credentials_exception
+        return ("tenant", tenant)
+
+    landlord = session.get(Landlord, user_id)
+    if landlord is None:
+        raise credentials_exception
+    return ("landlord", landlord)
 
 
 def get_frequency_months(frequency: PaymentFrequency) -> int:
@@ -637,3 +700,40 @@ async def upload_payment_receipt(
     session.refresh(payment)
 
     return enrich_payment_with_tenant(payment, session)
+
+
+@router.get("/{payment_id}/receipt")
+async def get_payment_receipt(
+    payment_id: str,
+    viewer=Depends(_get_current_receipt_viewer),
+    session: Session = Depends(get_session),
+):
+    """Download/view the uploaded receipt file (tenant + landlord access controlled)."""
+    viewer_type, viewer_user = viewer
+
+    if viewer_type == "landlord":
+        payment = verify_payment_access(payment_id, viewer_user.id, session)
+    else:
+        payment = session.get(Payment, payment_id)
+        if not payment or payment.tenant_id != viewer_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Payment not found"
+            )
+
+    if not payment.receipt_url:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Receipt not found"
+        )
+
+    file_path = _resolve_receipt_file_path(payment.receipt_url)
+    if not os.path.exists(file_path):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Receipt not found"
+        )
+
+    media_type, _ = mimetypes.guess_type(file_path)
+    return FileResponse(
+        file_path,
+        media_type=media_type or "application/octet-stream",
+        filename=os.path.basename(file_path),
+    )
