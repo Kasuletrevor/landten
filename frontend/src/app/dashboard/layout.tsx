@@ -4,12 +4,14 @@ import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/lib/auth-context";
+import { NotificationBell } from "@/components/notification-bell";
 import {
   Building2,
   LayoutDashboard,
   Home,
   Users,
   CreditCard,
+  Bell,
   LogOut,
   Menu,
   X,
@@ -20,6 +22,7 @@ const navItems = [
   { href: "/dashboard/properties", label: "Properties", icon: Home },
   { href: "/dashboard/tenants", label: "Tenants", icon: Users },
   { href: "/dashboard/payments", label: "Payments", icon: CreditCard },
+  { href: "/dashboard/notifications", label: "Notifications", icon: Bell },
 ];
 
 export default function DashboardLayout({
@@ -69,28 +72,33 @@ export default function DashboardLayout({
     <div className="min-h-screen bg-[var(--background)]">
       {/* Mobile Header */}
       <header className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-[var(--surface)] border-b border-[var(--border)] z-40 flex items-center justify-between px-4">
-        <Link href="/dashboard" className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[var(--primary-500)] to-[var(--primary-700)] flex items-center justify-center">
-            <Building2 className="w-4 h-4 text-white" />
-          </div>
-          <span
-            className="font-semibold text-lg"
-            style={{ fontFamily: "var(--font-outfit)" }}
+        <div className="flex items-center gap-3">
+          <Link href="/dashboard" className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[var(--primary-500)] to-[var(--primary-700)] flex items-center justify-center">
+              <Building2 className="w-4 h-4 text-white" />
+            </div>
+            <span
+              className="font-semibold text-lg"
+              style={{ fontFamily: "var(--font-outfit)" }}
+            >
+              LandTen
+            </span>
+          </Link>
+        </div>
+        <div className="flex items-center gap-1">
+          <NotificationBell />
+          <button
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            className="btn btn-ghost p-2"
+            aria-label="Toggle menu"
           >
-            LandTen
-          </span>
-        </Link>
-        <button
-          onClick={() => setSidebarOpen(!sidebarOpen)}
-          className="btn btn-ghost p-2"
-          aria-label="Toggle menu"
-        >
-          {sidebarOpen ? (
-            <X className="w-6 h-6" />
-          ) : (
-            <Menu className="w-6 h-6" />
-          )}
-        </button>
+            {sidebarOpen ? (
+              <X className="w-6 h-6" />
+            ) : (
+              <Menu className="w-6 h-6" />
+            )}
+          </button>
+        </div>
       </header>
 
       {/* Mobile Sidebar Overlay */}
@@ -108,7 +116,7 @@ export default function DashboardLayout({
         } lg:translate-x-0 transition-transform duration-300`}
       >
         {/* Logo - hidden on mobile (shown in header) */}
-        <div className="sidebar-logo hidden lg:block">
+        <div className="sidebar-logo hidden lg:flex items-center justify-between">
           <Link href="/dashboard" className="flex items-center gap-2">
             <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[var(--primary-500)] to-[var(--primary-700)] flex items-center justify-center">
               <Building2 className="w-4 h-4 text-white" />
@@ -120,6 +128,7 @@ export default function DashboardLayout({
               LandTen
             </span>
           </Link>
+          <NotificationBell />
         </div>
 
         {/* Spacer for mobile (accounts for header) */}
@@ -141,6 +150,11 @@ export default function DashboardLayout({
                 >
                   <item.icon className="w-5 h-5" />
                   {item.label}
+                  {item.href === "/dashboard/notifications" && (
+                    <span className="ml-auto px-1.5 py-0.5 bg-[var(--primary-100)] text-[var(--primary-700)] text-[10px] font-bold rounded-full">
+                      New
+                    </span>
+                  )}
                 </Link>
               );
             })}
