@@ -394,8 +394,12 @@ class ApiClient {
   }
 
   // Notifications
-  async getNotifications(unreadOnly?: boolean) {
-    const query = unreadOnly ? "?unread_only=true" : "";
+  async getNotifications(params?: { unreadOnly?: boolean; limit?: number; offset?: number }) {
+    const queryParams = new URLSearchParams();
+    if (params?.unreadOnly) queryParams.set("unread_only", "true");
+    if (params?.limit) queryParams.set("limit", params.limit.toString());
+    if (params?.offset) queryParams.set("offset", params.offset.toString());
+    const query = queryParams.toString() ? `?${queryParams.toString()}` : "";
     return this.request<NotificationListResponse>(`/notifications${query}`);
   }
 
@@ -651,6 +655,8 @@ export interface Notification {
   tenant_id?: string;
   created_at: string;
 }
+
+export type NotificationItem = Notification;
 
 export interface NotificationListResponse {
   notifications: Notification[];
