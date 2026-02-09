@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import api, { Payment, TenantPortalResponse, PaymentStatus } from "@/lib/api";
+import api, { Payment, TenantPortalResponse, PaymentStatus, PaymentDispute, LeaseAgreement } from "@/lib/api";
 import ReceiptUploadModal from "./ReceiptUploadModal";
 import {
   Building2,
@@ -15,9 +15,11 @@ import {
   CreditCard,
   Ban,
   Calendar,
-  User,
-  DollarSign,
-  FileSearch
+  MessageSquare,
+  X,
+  FileText,
+  Upload,
+  Download
 } from "lucide-react";
 
 export default function TenantDashboardPage() {
@@ -34,6 +36,9 @@ export default function TenantDashboardPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [uploadPayment, setUploadPayment] = useState<Payment | null>(null);
+  const [disputePayment, setDisputePayment] = useState<Payment | null>(null);
+
+  const normalizeStatus = (status: PaymentStatus) => String(status).toUpperCase();
 
   useEffect(() => {
     const token = api.getToken();
@@ -244,22 +249,25 @@ export default function TenantDashboardPage() {
              ) : (
                 <div className="divide-y divide-[var(--border)]">
                    {payments.map((payment) => {
-                      const status = statusConfig[payment.status];
+                      const normalizedStatus = normalizeStatus(payment.status);
+                      const status =
+                        statusConfig[normalizedStatus as keyof typeof statusConfig] ||
+                        statusConfig.PENDING;
                       return (
                          <div key={payment.id} className="p-4 sm:p-6 hover:bg-[var(--surface-inset)] transition-colors">
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                                <div className="flex items-start gap-4">
                                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
-                                     payment.status === "ON_TIME" || payment.status === "LATE"
+                                     normalizedStatus === "ON_TIME" || normalizedStatus === "LATE"
                                        ? "bg-[var(--success-light)]"
-                                       : payment.status === "OVERDUE"
+                                       : normalizedStatus === "OVERDUE"
                                        ? "bg-[var(--error-light)]"
                                        : "bg-[var(--warning-light)]"
                                   }`}>
                                      <status.icon className={`w-5 h-5 ${
-                                        payment.status === "ON_TIME" || payment.status === "LATE"
+                                        normalizedStatus === "ON_TIME" || normalizedStatus === "LATE"
                                           ? "text-[var(--success)]"
-                                          : payment.status === "OVERDUE"
+                                          : normalizedStatus === "OVERDUE"
                                           ? "text-[var(--error)]"
                                           : "text-[var(--warning)]"
                                      }`} />
@@ -288,14 +296,21 @@ export default function TenantDashboardPage() {
                                </div>
                                
                                 {/* Upload Receipt Action */}
-                                {(payment.status === "PENDING" || payment.status === "OVERDUE" || payment.status === "UPCOMING" || payment.status === "VERIFYING") && (
+                                {(normalizedStatus === "PENDING" || normalizedStatus === "OVERDUE" || normalizedStatus === "UPCOMING" || normalizedStatus === "VERIFYING") && (
                                   <button
                                     onClick={() => setUploadPayment(payment)}
-                                    className={`btn btn-sm ${payment.status === "VERIFYING" ? "btn-secondary" : payment.rejection_reason ? "btn-danger" : "btn-primary"}`}
+                                    className={`btn btn-sm ${normalizedStatus === "VERIFYING" ? "btn-secondary" : payment.rejection_reason ? "btn-danger" : "btn-primary"}`}
                                   >
-                                     {payment.status === "VERIFYING" ? "Update Receipt" : payment.rejection_reason ? "Upload New Receipt" : "Upload Receipt"}
+                                     {normalizedStatus === "VERIFYING" ? "Update Receipt" : payment.rejection_reason ? "Upload New Receipt" : "Upload Receipt"}
                                   </button>
                                 )}
+                                <button
+                                  onClick={() => setDisputePayment(payment)}
+                                  className="btn btn-sm btn-secondary"
+                                >
+                                  <MessageSquare className="w-4 h-4" />
+                                  Discuss
+                                </button>
                             </div>
                              {(payment.payment_reference || payment.notes || payment.rejection_reason) && (
                                 <div className="mt-3 ml-14 p-3 bg-[var(--background)] rounded-lg text-sm border border-[var(--border)]">
@@ -326,10 +341,13 @@ export default function TenantDashboardPage() {
                 </div>
              )}
            </div>
-        </section>
-      </main>
+         </section>
 
-      {/* Upload Modal */}
+         {/* Lease Agreement Section */}
+         <LeaseSection />
+       </main>
+ 
+       {/* Upload Modal */}
       {uploadPayment && (
         <ReceiptUploadModal
           payment={uploadPayment}
@@ -342,7 +360,218 @@ export default function TenantDashboardPage() {
           }}
         />
       )}
+
+      {disputePayment && (
+        <TenantDisputeModal
+          payment={disputePayment}
+          onClose={() => setDisputePayment(null)}
+        />
+      )}
     </div>
+  );
+}
+
+function LeaseSection() {
+  const [lease, setLease] = useState<LeaseAgreement | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [uploadModalOpen, setUploadModalOpen] = useState(false);
+
+  useEffect(() => {
+    loadLease();
+  }, []);
+
+  const loadLease = async () => {
+    try {
+      const leaseData = await api.getMyLease();
+      setLease(leaseData);
+    } catch (err) {
+      // No lease found is okay
+      setLease(null);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleDownload = async () => {
+    try {
+      const blob = await api.tenantDownloadLease();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "lease_agreement.pdf";
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err) {
+      setError("Failed to download lease");
+    }
+  };
+
+  const handleUploadSigned = async (file: File) => {
+    try {
+      await api.tenantUploadSignedLease(file);
+      await loadLease();
+      setUploadModalOpen(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to upload");
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <section className="card p-6 animate-slide-up stagger-3">
+        <div className="flex items-center justify-center h-32">
+          <div className="spinner" />
+        </div>
+      </section>
+    );
+  }
+
+  if (!lease) {
+    return (
+      <section className="card p-6 animate-slide-up stagger-3">
+        <h2 className="text-xl font-semibold flex items-center gap-2 mb-4" style={{ fontFamily: "var(--font-outfit)" }}>
+          <FileText className="w-5 h-5 text-[var(--text-muted)]" />
+          Lease Agreement
+        </h2>
+        <div className="text-center py-8">
+          <div className="w-16 h-16 bg-[var(--surface-inset)] rounded-full flex items-center justify-center mx-auto mb-4">
+            <FileText className="w-8 h-8 text-[var(--text-muted)] opacity-50" />
+          </div>
+          <h3 className="text-lg font-medium mb-1">No Lease Agreement</h3>
+          <p className="text-[var(--text-secondary)]">Your landlord has not uploaded a lease agreement yet.</p>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="card p-6 animate-slide-up stagger-3">
+      <h2 className="text-xl font-semibold flex items-center gap-2 mb-4" style={{ fontFamily: "var(--font-outfit)" }}>
+        <FileText className="w-5 h-5 text-[var(--text-muted)]" />
+        Lease Agreement
+      </h2>
+
+      {error && (
+        <div className="p-3 mb-4 bg-[var(--error-light)] text-[var(--error)] rounded-lg text-sm">
+          {error}
+        </div>
+      )}
+
+      <div className="space-y-4">
+        {/* Status Banner */}
+        <div
+          className={`p-4 rounded-xl ${
+            lease.status === "SIGNED"
+              ? "bg-[var(--success-light)]"
+              : "bg-[var(--warning-light)]"
+          }`}
+        >
+          <div className="flex items-center gap-3">
+            {lease.status === "SIGNED" ? (
+              <CheckCircle className="w-5 h-5 text-[var(--success)]" />
+            ) : (
+              <Clock className="w-5 h-5 text-[var(--warning)]" />
+            )}
+            <div>
+              <p
+                className={`font-medium ${
+                  lease.status === "SIGNED" ? "text-[var(--success)]" : "text-[var(--warning)]"
+                }`}
+              >
+                {lease.status === "SIGNED" ? "Lease Signed" : "Awaiting Your Signature"}
+              </p>
+              <p className="text-sm text-[var(--text-secondary)]">
+                {lease.status === "SIGNED"
+                  ? "Your lease agreement has been signed by all parties."
+                  : "Please review, sign, and upload the lease agreement."}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Lease Details */}
+        <div className="grid grid-cols-2 gap-4">
+          {lease.start_date && (
+            <div>
+              <p className="text-sm text-[var(--text-muted)]">Start Date</p>
+              <p className="font-medium">{new Date(lease.start_date).toLocaleDateString()}</p>
+            </div>
+          )}
+          {lease.end_date && (
+            <div>
+              <p className="text-sm text-[var(--text-muted)]">End Date</p>
+              <p className="font-medium">{new Date(lease.end_date).toLocaleDateString()}</p>
+            </div>
+          )}
+          {lease.rent_amount && (
+            <div>
+              <p className="text-sm text-[var(--text-muted)]">Rent Amount</p>
+              <p className="font-medium">
+                {new Intl.NumberFormat("en-US", {
+                  style: "currency",
+                  currency: "USD",
+                  minimumFractionDigits: 0,
+                }).format(lease.rent_amount)}
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Actions */}
+        <div className="flex flex-wrap gap-3 pt-4 border-t border-[var(--border)]">
+          <button onClick={handleDownload} className="btn btn-secondary">
+            <Download className="w-4 h-4" />
+            {lease.status === "SIGNED" ? "Download Signed Lease" : "Download Lease"}
+          </button>
+
+          {lease.status === "UNSIGNED" && (
+            <button onClick={() => setUploadModalOpen(true)} className="btn btn-primary">
+              <Upload className="w-4 h-4" />
+              Upload Signed Copy
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Upload Modal */}
+      {uploadModalOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="card max-w-md w-full p-6 animate-slide-up">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold">Upload Signed Lease</h3>
+              <button onClick={() => setUploadModalOpen(false)} className="btn btn-ghost p-2">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-[var(--text-secondary)] mb-4">
+              Upload the signed copy of your lease agreement (PDF only).
+            </p>
+
+            <input
+              type="file"
+              accept="application/pdf"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) {
+                  handleUploadSigned(file);
+                }
+              }}
+              className="input mb-4"
+            />
+
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setUploadModalOpen(false)} className="btn btn-secondary">
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -357,7 +586,7 @@ function PaymentStatusBanner({
 }) {
   // Find next actionable payment (upcoming, pending, or overdue)
   const nextPayment = payments.find((p) =>
-    ["UPCOMING", "PENDING", "OVERDUE"].includes(p.status)
+    ["UPCOMING", "PENDING", "OVERDUE"].includes(String(p.status).toUpperCase())
   );
 
   if (!nextPayment) return null;
@@ -440,6 +669,158 @@ function PaymentStatusBanner({
         >
           Upload Receipt
         </button>
+      </div>
+    </div>
+  );
+}
+
+function TenantDisputeModal({
+  payment,
+  onClose,
+}: {
+  payment: Payment;
+  onClose: () => void;
+}) {
+  const [thread, setThread] = useState<PaymentDispute | null>(null);
+  const [message, setMessage] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSending, setIsSending] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const loadThread = async () => {
+      setIsLoading(true);
+      setError("");
+      try {
+        const data = await api.getTenantPaymentDispute(payment.id);
+        setThread(data);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Failed to load dispute thread";
+        if (msg.toLowerCase().includes("dispute not found")) {
+          setThread(null);
+        } else {
+          setError(msg);
+        }
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadThread();
+  }, [payment.id]);
+
+  const isResolved = (thread?.status || "").toString().toLowerCase() === "resolved";
+
+  const handleSend = async () => {
+    const body = message.trim();
+    if (!body) return;
+
+    setIsSending(true);
+    setError("");
+    try {
+      const updated = await api.postTenantPaymentDisputeMessage(payment.id, body);
+      setThread(updated);
+      setMessage("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to send message");
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal max-w-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header flex items-center justify-between">
+          <h2 className="text-xl font-semibold" style={{ fontFamily: "var(--font-outfit)" }}>
+            Payment Discussion
+          </h2>
+          <button onClick={onClose} className="btn btn-ghost p-2">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="modal-body space-y-4">
+          {error && (
+            <div className="p-3 bg-[var(--error-light)] text-[var(--error)] rounded-lg text-sm">
+              {error}
+            </div>
+          )}
+
+          <div className="text-sm text-[var(--text-secondary)]">
+            Status:{" "}
+            <span className={`font-medium ${isResolved ? "text-[var(--success)]" : "text-[var(--warning)]"}`}>
+              {isResolved ? "Resolved" : "Open"}
+            </span>
+          </div>
+
+          <div className="border border-[var(--border)] rounded-xl p-4 max-h-72 overflow-y-auto space-y-3 bg-[var(--surface-inset)]">
+            {isLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="spinner" />
+              </div>
+            ) : !thread || thread.messages.length === 0 ? (
+              <p className="text-sm text-[var(--text-muted)]">
+                No discussion yet. Add a message to explain the discrepancy.
+              </p>
+            ) : (
+              thread.messages.map((entry) => (
+                <div key={entry.id} className="p-3 rounded-lg bg-[var(--surface)] border border-[var(--border)]">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-medium">
+                      {entry.author_type === "tenant" ? "You" : "Landlord"}
+                    </p>
+                    <p className="text-xs text-[var(--text-muted)]">
+                      {new Date(entry.created_at).toLocaleString()}
+                    </p>
+                  </div>
+                  <p className="text-sm text-[var(--text-secondary)] mt-1 whitespace-pre-wrap">
+                    {entry.body}
+                  </p>
+                </div>
+              ))
+            )}
+          </div>
+
+          <div>
+            <label className="label">Message</label>
+            <textarea
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              className="input min-h-[110px]"
+              placeholder={
+                isResolved
+                  ? "This thread is resolved. Ask your landlord to reopen it if needed."
+                  : "Explain the discrepancy and include any reference details..."
+              }
+              disabled={isResolved || isSending}
+            />
+          </div>
+        </div>
+
+        <div className="modal-footer">
+          <button type="button" onClick={onClose} className="btn btn-secondary">
+            Close
+          </button>
+          <button
+            type="button"
+            onClick={handleSend}
+            disabled={isLoading || isResolved || isSending || !message.trim()}
+            className="btn btn-primary"
+          >
+            {isSending ? (
+              <>
+                <div className="spinner" />
+                Sending...
+              </>
+            ) : (
+              <>
+                <MessageSquare className="w-4 h-4" />
+                Send Message
+              </>
+            )}
+          </button>
+        </div>
       </div>
     </div>
   );
