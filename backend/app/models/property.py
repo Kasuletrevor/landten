@@ -6,6 +6,7 @@ import uuid
 if TYPE_CHECKING:
     from app.models.landlord import Landlord
     from app.models.room import Room
+    from app.models.lease_agreement import LeaseAgreement
 
 
 class Property(SQLModel, table=True):
@@ -25,3 +26,4 @@ class Property(SQLModel, table=True):
     # Relationships
     landlord: Optional["Landlord"] = Relationship(back_populates="properties")
     rooms: List["Room"] = Relationship(back_populates="property")
+    lease_agreements: List["LeaseAgreement"] = Relationship(back_populates="property")

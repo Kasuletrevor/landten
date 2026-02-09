@@ -7,6 +7,7 @@ if TYPE_CHECKING:
     from app.models.room import Room
     from app.models.payment_schedule import PaymentSchedule
     from app.models.payment import Payment
+    from app.models.lease_agreement import LeaseAgreement
 
 
 class Tenant(SQLModel, table=True):
@@ -33,3 +34,6 @@ class Tenant(SQLModel, table=True):
         back_populates="tenant"
     )
     payments: List["Payment"] = Relationship(back_populates="tenant")
+    lease_agreement: Optional["LeaseAgreement"] = Relationship(
+        back_populates="tenant", sa_relationship_kwargs={"uselist": False}
+    )

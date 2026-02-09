@@ -14,6 +14,7 @@ class NotificationType(str, Enum):
     TENANT_ADDED = "tenant_added"
     TENANT_REMOVED = "tenant_removed"
     REMINDER_SENT = "reminder_sent"
+    PAYMENT_DISPUTE_MESSAGE = "payment_dispute_message"
 
 
 class Notification(SQLModel, table=True):

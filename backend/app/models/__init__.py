@@ -6,6 +6,13 @@ from app.models.tenant import Tenant
 from app.models.payment_schedule import PaymentSchedule, PaymentFrequency
 from app.models.payment import Payment, PaymentStatus
 from app.models.notification import Notification, NotificationType
+from app.models.payment_dispute import (
+    PaymentDispute,
+    PaymentDisputeMessage,
+    DisputeStatus,
+    DisputeActorType,
+)
+from app.models.lease_agreement import LeaseAgreement, LeaseStatus
 
 __all__ = [
     "Landlord",
@@ -18,4 +25,10 @@ __all__ = [
     "PaymentStatus",
     "Notification",
     "NotificationType",
+    "PaymentDispute",
+    "PaymentDisputeMessage",
+    "DisputeStatus",
+    "DisputeActorType",
+    "LeaseAgreement",
+    "LeaseStatus",
 ]
