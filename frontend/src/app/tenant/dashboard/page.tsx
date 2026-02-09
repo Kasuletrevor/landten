@@ -287,30 +287,39 @@ export default function TenantDashboardPage() {
                                   </div>
                                </div>
                                
-                               {/* Upload Receipt Action */}
-                               {(payment.status === "PENDING" || payment.status === "OVERDUE" || payment.status === "UPCOMING" || payment.status === "VERIFYING") && (
-                                 <button
-                                   onClick={() => setUploadPayment(payment)}
-                                   className={`btn btn-sm ${payment.status === "VERIFYING" ? "btn-secondary" : "btn-primary"}`}
-                                 >
-                                    {payment.status === "VERIFYING" ? "Update Receipt" : "Upload Receipt"}
-                                 </button>
-                               )}
+                                {/* Upload Receipt Action */}
+                                {(payment.status === "PENDING" || payment.status === "OVERDUE" || payment.status === "UPCOMING" || payment.status === "VERIFYING") && (
+                                  <button
+                                    onClick={() => setUploadPayment(payment)}
+                                    className={`btn btn-sm ${payment.status === "VERIFYING" ? "btn-secondary" : payment.rejection_reason ? "btn-danger" : "btn-primary"}`}
+                                  >
+                                     {payment.status === "VERIFYING" ? "Update Receipt" : payment.rejection_reason ? "Upload New Receipt" : "Upload Receipt"}
+                                  </button>
+                                )}
                             </div>
-                            {(payment.payment_reference || payment.notes) && (
-                               <div className="mt-3 ml-14 p-3 bg-[var(--background)] rounded-lg text-sm border border-[var(--border)]">
-                                  {payment.payment_reference && (
-                                     <p className="text-[var(--text-secondary)]">
-                                        <span className="font-medium text-[var(--text-primary)]">Ref:</span> {payment.payment_reference}
-                                     </p>
-                                  )}
-                                  {payment.notes && (
-                                     <p className="text-[var(--text-muted)] mt-1">
-                                        {payment.notes}
-                                     </p>
-                                  )}
-                               </div>
-                            )}
+                             {(payment.payment_reference || payment.notes || payment.rejection_reason) && (
+                                <div className="mt-3 ml-14 p-3 bg-[var(--background)] rounded-lg text-sm border border-[var(--border)]">
+                                   {payment.rejection_reason && (
+                                      <div className="flex items-start gap-2 text-[var(--error)] mb-2">
+                                         <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                                         <div>
+                                            <p className="font-medium">Receipt Rejected</p>
+                                            <p className="text-sm">{payment.rejection_reason}</p>
+                                         </div>
+                                      </div>
+                                   )}
+                                   {payment.payment_reference && (
+                                      <p className="text-[var(--text-secondary)]">
+                                         <span className="font-medium text-[var(--text-primary)]">Ref:</span> {payment.payment_reference}
+                                      </p>
+                                   )}
+                                   {payment.notes && (
+                                      <p className="text-[var(--text-muted)] mt-1">
+                                         {payment.notes}
+                                      </p>
+                                   )}
+                                </div>
+                             )}
                          </div>
                       );
                    })}
