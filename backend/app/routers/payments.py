@@ -18,6 +18,7 @@ from app.models.payment import Payment, PaymentStatus
 from app.schemas.payment import (
     PaymentMarkPaid,
     PaymentWaive,
+    PaymentRejectReceipt,
     PaymentUpdate,
     ManualPaymentCreate,
     PaymentWithTenant,
@@ -555,6 +556,44 @@ async def waive_payment(
     return enrich_payment_with_tenant(payment, session)
 
 
+@router.put("/{payment_id}/reject-receipt", response_model=PaymentWithTenant)
+async def reject_payment_receipt(
+    payment_id: str,
+    reject_data: PaymentRejectReceipt,
+    current_landlord: Landlord = Depends(get_current_landlord),
+    session: Session = Depends(get_session),
+):
+    """
+    Reject a receipt that was uploaded by the tenant.
+    Returns payment to PENDING or OVERDUE status based on current date.
+    """
+    payment = verify_payment_access(payment_id, current_landlord.id, session)
+
+    if payment.status != PaymentStatus.VERIFYING:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cannot reject receipt: payment status is {payment.status.value}, not VERIFYING",
+        )
+
+    # Determine the appropriate status based on current date
+    today = date.today()
+    if today < payment.due_date:
+        payment.status = PaymentStatus.UPCOMING
+    elif today <= payment.window_end_date:
+        payment.status = PaymentStatus.PENDING
+    else:
+        payment.status = PaymentStatus.OVERDUE
+
+    payment.rejection_reason = reject_data.reason
+    payment.updated_at = datetime.now(timezone.utc)
+
+    session.add(payment)
+    session.commit()
+    session.refresh(payment)
+
+    return enrich_payment_with_tenant(payment, session)
+
+
 @router.put("/{payment_id}", response_model=PaymentWithTenant)
 async def update_payment(
     payment_id: str,
@@ -693,7 +732,8 @@ async def upload_payment_receipt(
     payment.receipt_url = f"/uploads/receipts/{filename}"
     payment.status = PaymentStatus.VERIFYING
     payment.updated_at = datetime.now(timezone.utc)
-    # Clear any previous notes about rejection if they existed? For now leave notes.
+    # Clear previous rejection reason when new receipt is uploaded
+    payment.rejection_reason = None
 
     session.add(payment)
     session.commit()
