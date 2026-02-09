@@ -15,6 +15,10 @@ class PaymentWaive(BaseModel):
     notes: Optional[str] = None
 
 
+class PaymentRejectReceipt(BaseModel):
+    reason: str
+
+
 class PaymentUpdate(BaseModel):
     amount_due: Optional[float] = None
     due_date: Optional[date] = None
@@ -47,6 +51,7 @@ class PaymentResponse(BaseModel):
     payment_reference: Optional[str] = None
     receipt_url: Optional[str] = None
     notes: Optional[str] = None
+    rejection_reason: Optional[str] = None
     is_manual: bool
     created_at: datetime
     updated_at: datetime
