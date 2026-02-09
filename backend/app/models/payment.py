@@ -44,6 +44,7 @@ class Payment(SQLModel, table=True):
     payment_reference: Optional[str] = None  # Bank receipt/transaction reference
     receipt_url: Optional[str] = None  # URL to uploaded receipt file
     notes: Optional[str] = None
+    rejection_reason: Optional[str] = None  # Why receipt was rejected by landlord
 
     # Flags
     is_manual: bool = Field(default=False)  # True for one-off charges
