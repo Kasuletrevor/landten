@@ -353,6 +353,13 @@ class ApiClient {
     });
   }
 
+  async rejectReceipt(id: string, reason: string) {
+    return this.request<Payment>(`/payments/${id}/reject-receipt`, {
+      method: "PUT",
+      body: JSON.stringify({ reason }),
+    });
+  }
+
   async createManualPayment(data: {
     tenant_id: string;
     amount: number;
@@ -617,6 +624,7 @@ export interface Payment {
   payment_reference?: string;
   receipt_url?: string;
   notes?: string;
+  rejection_reason?: string;
   is_manual: boolean;
   created_at: string;
   updated_at: string;
