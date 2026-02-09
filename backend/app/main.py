@@ -21,6 +21,7 @@ from app.routers import (
     payments,
     notifications,
     tenant_auth,
+    leases,
 )
 from app.services.payment_service import (
     generate_all_due_payments,
@@ -89,6 +90,7 @@ from app.core.rate_limit import limiter
 
 # Create uploads directory if it doesn't exist
 os.makedirs("uploads/receipts", exist_ok=True)
+os.makedirs("uploads/leases", exist_ok=True)
 
 # Create FastAPI app
 app = FastAPI(
@@ -124,6 +126,7 @@ app.include_router(tenants.router, prefix="/api")
 app.include_router(payments.router, prefix="/api")
 app.include_router(notifications.router, prefix="/api")
 app.include_router(analytics.router, prefix="/api")
+app.include_router(leases.router, prefix="/api")
 
 # Mount static files for uploads
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
