@@ -273,6 +273,17 @@ class ApiClient {
     }>("/tenant-auth/payments");
   }
 
+  async getTenantPaymentDispute(paymentId: string) {
+    return this.request<PaymentDispute>(`/tenant-auth/payments/${paymentId}/dispute`);
+  }
+
+  async postTenantPaymentDisputeMessage(paymentId: string, body: string) {
+    return this.request<PaymentDispute>(`/tenant-auth/payments/${paymentId}/dispute/messages`, {
+      method: "POST",
+      body: JSON.stringify({ body }),
+    });
+  }
+
   // Payment Schedule
   async createPaymentSchedule(
     tenantId: string,
@@ -374,6 +385,29 @@ class ApiClient {
     });
   }
 
+  async getPaymentDispute(paymentId: string) {
+    return this.request<PaymentDispute>(`/payments/${paymentId}/dispute`);
+  }
+
+  async postPaymentDisputeMessage(paymentId: string, body: string) {
+    return this.request<PaymentDispute>(`/payments/${paymentId}/dispute/messages`, {
+      method: "POST",
+      body: JSON.stringify({ body }),
+    });
+  }
+
+  async resolvePaymentDispute(paymentId: string) {
+    return this.request<PaymentDispute>(`/payments/${paymentId}/dispute/resolve`, {
+      method: "PUT",
+    });
+  }
+
+  async reopenPaymentDispute(paymentId: string) {
+    return this.request<PaymentDispute>(`/payments/${paymentId}/dispute/reopen`, {
+      method: "PUT",
+    });
+  }
+
   async uploadPaymentReceipt(paymentId: string, file: File) {
     const formData = new FormData();
     formData.append("file", file);
@@ -446,7 +480,7 @@ class ApiClient {
       }
     };
 
-    eventSource.addEventListener("connected", (event) => {
+    eventSource.addEventListener("connected", () => {
       console.log("SSE connected");
     });
 
@@ -462,6 +496,13 @@ class ApiClient {
       onMessage({ type: "payment_received", data: JSON.parse((event as MessageEvent).data) });
     });
 
+    eventSource.addEventListener("payment_dispute_message", (event) => {
+      onMessage({
+        type: "payment_dispute_message",
+        data: JSON.parse((event as MessageEvent).data),
+      });
+    });
+
     eventSource.onerror = (error) => {
       console.error("SSE error:", error);
     };
@@ -472,6 +513,161 @@ class ApiClient {
   // Analytics
   async getAnalytics() {
     return this.request<DashboardAnalytics>("/analytics/dashboard");
+  }
+
+  // Lease Agreements
+  async getLeases(filters?: { property_id?: string; status?: string }) {
+    const params = new URLSearchParams();
+    if (filters?.property_id) params.set("property_id", filters.property_id);
+    if (filters?.status) params.set("status", filters.status);
+    const query = params.toString() ? `?${params.toString()}` : "";
+    return this.request<LeaseAgreementListResponse>(`/leases${query}`);
+  }
+
+  async getLeaseSummary() {
+    return this.request<LeaseStatusSummary>("/leases/summary");
+  }
+
+  async getLease(id: string) {
+    return this.request<LeaseAgreementWithTenant>(`/leases/${id}`);
+  }
+
+  async uploadLeaseDocument(
+    tenantId: string,
+    file: File,
+    data?: { start_date?: string; end_date?: string; rent_amount?: number }
+  ) {
+    const formData = new FormData();
+    formData.append("file", file);
+    if (data?.start_date) formData.append("start_date", data.start_date);
+    if (data?.end_date) formData.append("end_date", data.end_date);
+    if (data?.rent_amount) formData.append("rent_amount", data.rent_amount.toString());
+
+    const token = this.getToken();
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${API_BASE}/leases/upload-original/${tenantId}`, {
+      method: "POST",
+      body: formData,
+      headers,
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({
+        detail: "An error occurred during upload",
+      }));
+      throw new Error(error.detail);
+    }
+
+    return response.json() as Promise<LeaseAgreement>;
+  }
+
+  async uploadSignedLease(leaseId: string, file: File) {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const token = this.getToken();
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${API_BASE}/leases/${leaseId}/upload-signed`, {
+      method: "POST",
+      body: formData,
+      headers,
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({
+        detail: "An error occurred during upload",
+      }));
+      throw new Error(error.detail);
+    }
+
+    return response.json() as Promise<LeaseAgreement>;
+  }
+
+  async updateLease(
+    id: string,
+    data: { start_date?: string; end_date?: string; rent_amount?: number }
+  ) {
+    return this.request<LeaseAgreement>(`/leases/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteLease(id: string) {
+    return this.request<void>(`/leases/${id}`, { method: "DELETE" });
+  }
+
+  async downloadOriginalLease(leaseId: string) {
+    return this.request<Blob>(`/leases/${leaseId}/download-original`, {
+      method: "GET",
+    });
+  }
+
+  async downloadSignedLease(leaseId: string) {
+    return this.request<Blob>(`/leases/${leaseId}/download-signed`, {
+      method: "GET",
+    });
+  }
+
+  // Tenant Lease Endpoints
+  async getMyLease() {
+    return this.request<LeaseAgreement>("/leases/tenant/my-lease");
+  }
+
+  async tenantUploadSignedLease(file: File) {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const token = this.getToken();
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${API_BASE}/leases/tenant/my-lease/upload-signed`, {
+      method: "POST",
+      body: formData,
+      headers,
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({
+        detail: "An error occurred during upload",
+      }));
+      throw new Error(error.detail);
+    }
+
+    return response.json() as Promise<LeaseAgreement>;
+  }
+
+  async tenantDownloadLease(): Promise<Blob> {
+    const token = this.getToken();
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${API_BASE}/leases/tenant/my-lease/download`, {
+      method: "GET",
+      headers,
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({
+        detail: "An error occurred during download",
+      }));
+      throw new Error(error.detail);
+    }
+
+    return response.blob();
   }
 }
 
@@ -610,6 +806,9 @@ export type PaymentStatus =
   | "WAIVED"
   | "VERIFYING";
 
+export type DisputeStatus = "open" | "resolved" | "OPEN" | "RESOLVED";
+export type DisputeActorType = "landlord" | "tenant" | "system";
+
 export interface Payment {
   id: string;
   tenant_id: string;
@@ -625,15 +824,54 @@ export interface Payment {
   receipt_url?: string;
   notes?: string;
   rejection_reason?: string;
+  dispute_status?: DisputeStatus | null;
+  dispute_unread_count?: number;
+  last_dispute_message_at?: string | null;
   is_manual: boolean;
   created_at: string;
   updated_at: string;
 }
 
 export interface PaymentWithTenant extends Payment {
-  tenant: Tenant;
-  room: Room;
-  property: Property;
+  tenant?: Tenant;
+  room?: Room;
+  property?: Property;
+  tenant_name?: string;
+  tenant_email?: string;
+  tenant_phone?: string;
+  room_name?: string;
+  property_id?: string;
+  property_name?: string;
+  currency?: string;
+  days_until_due?: number;
+  days_overdue?: number;
+}
+
+export interface PaymentDisputeMessage {
+  id: string;
+  dispute_id: string;
+  payment_id: string;
+  author_type: DisputeActorType;
+  author_id: string;
+  body: string;
+  created_at: string;
+}
+
+export interface PaymentDispute {
+  id: string;
+  payment_id: string;
+  status: DisputeStatus;
+  opened_by_type: DisputeActorType;
+  opened_by_id: string;
+  opened_at: string;
+  resolved_by_type?: DisputeActorType | null;
+  resolved_by_id?: string | null;
+  resolved_at?: string | null;
+  landlord_last_read_at?: string | null;
+  tenant_last_read_at?: string | null;
+  last_message_at?: string | null;
+  unread_count: number;
+  messages: PaymentDisputeMessage[];
 }
 
 export interface PaymentListResponse {
@@ -722,6 +960,44 @@ export interface DashboardAnalytics {
   vacancy_trend: TrendComparison;
   primary_currency: string;
   currency_note: string;
+}
+
+// Lease Agreement Types
+export type LeaseStatus = "UNSIGNED" | "SIGNED";
+
+export interface LeaseAgreement {
+  id: string;
+  tenant_id: string;
+  property_id: string;
+  original_url: string;
+  signed_url?: string;
+  status: LeaseStatus;
+  start_date?: string;
+  end_date?: string;
+  rent_amount?: number;
+  uploaded_by_landlord: boolean;
+  signed_uploaded_by?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface LeaseAgreementWithTenant extends LeaseAgreement {
+  tenant_name?: string;
+  tenant_email?: string;
+  tenant_phone?: string;
+  room_name?: string;
+  property_name?: string;
+}
+
+export interface LeaseAgreementListResponse {
+  leases: LeaseAgreementWithTenant[];
+  total: number;
+}
+
+export interface LeaseStatusSummary {
+  total_unsigned: number;
+  total_signed: number;
+  total: number;
 }
 
 export const api = new ApiClient();
