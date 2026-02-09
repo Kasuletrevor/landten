@@ -42,6 +42,7 @@ export default function PaymentsPage() {
   const [markPaidPayment, setMarkPaidPayment] = useState<PaymentWithTenant | null>(null);
   const [waivePayment, setWaivePayment] = useState<PaymentWithTenant | null>(null);
   const [sendReminderPayment, setSendReminderPayment] = useState<PaymentWithTenant | null>(null);
+  const [rejectPayment, setRejectPayment] = useState<PaymentWithTenant | null>(null);
 
   useEffect(() => {
     loadData();
@@ -425,6 +426,32 @@ export default function PaymentsPage() {
                               )}
                             </>
                           )}
+                          {payment.status === "VERIFYING" && (
+                            <>
+                              <button
+                                onClick={() => setMarkPaidPayment(payment)}
+                                className="btn btn-sm btn-ghost text-[var(--success)]"
+                                title="Approve Receipt"
+                              >
+                                <CheckCircle className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => setRejectPayment(payment)}
+                                className="btn btn-sm btn-ghost text-[var(--error)]"
+                                title="Reject Receipt"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            </>
+                          )}
+                          {payment.rejection_reason && (
+                            <span
+                              className="text-xs text-[var(--error)] ml-2 cursor-help"
+                              title={`Rejected: ${payment.rejection_reason}`}
+                            >
+                              <AlertTriangle className="w-4 h-4" />
+                            </span>
+                          )}
                           {payment.payment_reference && (
                             <span
                               className="text-xs text-[var(--text-muted)] ml-2"
@@ -467,6 +494,15 @@ export default function PaymentsPage() {
         <SendReminderModal
           payment={sendReminderPayment}
           onClose={() => setSendReminderPayment(null)}
+        />
+      )}
+
+      {/* Reject Receipt Modal */}
+      {rejectPayment && (
+        <RejectReceiptModal
+          payment={rejectPayment}
+          onClose={() => setRejectPayment(null)}
+          onSave={loadData}
         />
       )}
     </div>
@@ -928,6 +964,123 @@ function SendReminderModal({
             </button>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+function RejectReceiptModal({
+  payment,
+  onClose,
+  onSave,
+}: {
+  payment: PaymentWithTenant;
+  onClose: () => void;
+  onSave: () => void;
+}) {
+  const [reason, setReason] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!reason.trim()) {
+      setError("Please provide a reason for rejecting this receipt");
+      return;
+    }
+
+    setError("");
+    setIsLoading(true);
+
+    try {
+      await api.rejectReceipt(payment.id, reason);
+      onSave();
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to reject receipt");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+      minimumFractionDigits: 0,
+    }).format(amount);
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header flex items-center justify-between">
+          <h2 className="text-xl font-semibold" style={{ fontFamily: "var(--font-outfit)" }}>
+            Reject Receipt
+          </h2>
+          <button onClick={onClose} className="btn btn-ghost p-2">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit}>
+          <div className="modal-body">
+            {error && (
+              <div className="p-3 mb-4 bg-[var(--error-light)] text-[var(--error)] rounded-lg text-sm">
+                {error}
+              </div>
+            )}
+
+            <div className="p-4 bg-[var(--error-light)] rounded-xl mb-6">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="w-5 h-5 text-[var(--error)] flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-medium text-[var(--error)]">Reject uploaded receipt</p>
+                  <p className="text-sm text-[var(--text-secondary)] mt-1">
+                    The tenant will be notified that their receipt for{" "}
+                    <strong>{formatCurrency(payment.amount_due)}</strong> was rejected and will need
+                    to upload a new one.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <label className="label">
+                Reason for Rejection <span className="text-[var(--error)]">*</span>
+              </label>
+              <textarea
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                className="input min-h-[100px]"
+                placeholder="e.g., Receipt amount doesn't match, blurry image, wrong date..."
+                required
+              />
+              <p className="text-xs text-[var(--text-muted)] mt-1">
+                This will be shown to the tenant so they know what to fix.
+              </p>
+            </div>
+          </div>
+
+          <div className="modal-footer">
+            <button type="button" onClick={onClose} className="btn btn-secondary">
+              Cancel
+            </button>
+            <button type="submit" disabled={isLoading} className="btn btn-danger">
+              {isLoading ? (
+                <>
+                  <div className="spinner" />
+                  Rejecting...
+                </>
+              ) : (
+                <>
+                  <X className="w-4 h-4" />
+                  Reject Receipt
+                </>
+              )}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );
