@@ -1,6 +1,5 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Form, Request
 from fastapi.responses import FileResponse
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlmodel import Session, select
 from typing import Optional, List
 from datetime import datetime, date, timezone
@@ -15,6 +14,21 @@ from app.models.room import Room
 from app.models.tenant import Tenant
 from app.models.payment_schedule import PaymentSchedule, PaymentFrequency
 from app.models.payment import Payment, PaymentStatus
+from app.models.payment_dispute import DisputeActorType, PaymentDisputeMessage
+from app.services import notification_service
+from app.services.payment_dispute_service import (
+    get_dispute_for_payment,
+    get_unread_count,
+    mark_dispute_read,
+    build_dispute_response,
+    create_dispute_message,
+    get_payment_for_landlord,
+    get_payment_for_tenant,
+    resolve_dispute,
+    reopen_dispute,
+    save_dispute_attachment,
+    resolve_dispute_attachment_file_path,
+)
 from app.schemas.payment import (
     PaymentMarkPaid,
     PaymentWaive,
@@ -24,15 +38,14 @@ from app.schemas.payment import (
     PaymentWithTenant,
     PaymentListResponse,
     PaymentSummary,
+    PaymentDisputeResponse,
+    PaymentDisputeMessageCreate,
 )
 from fastapi import UploadFile, File
 import shutil
 import os
 import uuid
 from typing import Annotated
-
-
-_receipt_auth_scheme = HTTPBearer()
 
 router = APIRouter(prefix="/payments", tags=["Payments"])
 
@@ -64,7 +77,8 @@ def _resolve_receipt_file_path(receipt_url: str) -> str:
 
 
 async def _get_current_receipt_viewer(
-    credentials: HTTPAuthorizationCredentials = Depends(_receipt_auth_scheme),
+    request: Request,
+    token: Optional[str] = Query(None),
     session: Session = Depends(get_session),
 ):
     """Authenticate either landlord or tenant for receipt viewing."""
@@ -74,7 +88,16 @@ async def _get_current_receipt_viewer(
         headers={"WWW-Authenticate": "Bearer"},
     )
 
-    payload = decode_token(credentials.credentials)
+    bearer_token = token
+    if not bearer_token:
+        auth_header = request.headers.get("authorization")
+        if auth_header and auth_header.lower().startswith("bearer "):
+            bearer_token = auth_header.split(" ", 1)[1]
+
+    if not bearer_token:
+        raise credentials_exception
+
+    payload = decode_token(bearer_token)
     if payload is None:
         raise credentials_exception
 
@@ -228,6 +251,13 @@ def enrich_payment_with_tenant(payment: Payment, session: Session) -> PaymentWit
         else:
             days_overdue = None
 
+    dispute = get_dispute_for_payment(session, payment.id)
+    dispute_status = dispute.status if dispute else None
+    dispute_unread_count = (
+        get_unread_count(session, dispute, "landlord") if dispute else 0
+    )
+    last_dispute_message_at = dispute.last_message_at if dispute else None
+
     return PaymentWithTenant(
         **payment.model_dump(),
         tenant_name=tenant.name if tenant else None,
@@ -239,6 +269,9 @@ def enrich_payment_with_tenant(payment: Payment, session: Session) -> PaymentWit
         currency=room.currency if room else None,
         days_until_due=days_until_due,
         days_overdue=days_overdue,
+        dispute_status=dispute_status,
+        dispute_unread_count=dispute_unread_count,
+        last_dispute_message_at=last_dispute_message_at,
     )
 
 
@@ -776,4 +809,316 @@ async def get_payment_receipt(
         file_path,
         media_type=media_type or "application/octet-stream",
         filename=os.path.basename(file_path),
+    )
+
+
+@router.get("/{payment_id}/dispute", response_model=PaymentDisputeResponse)
+async def get_payment_dispute(
+    payment_id: str,
+    current_landlord: Landlord = Depends(get_current_landlord),
+    session: Session = Depends(get_session),
+):
+    _, _, _ = get_payment_for_landlord(session, payment_id, current_landlord.id)
+
+    dispute = get_dispute_for_payment(session, payment_id)
+    if not dispute:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Dispute not found"
+        )
+
+    mark_dispute_read(dispute, "landlord")
+    session.add(dispute)
+    session.commit()
+    session.refresh(dispute)
+    return build_dispute_response(session, dispute, "landlord")
+
+
+@router.post(
+    "/{payment_id}/dispute/messages",
+    response_model=PaymentDisputeResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def post_payment_dispute_message(
+    payment_id: str,
+    payload: PaymentDisputeMessageCreate,
+    current_landlord: Landlord = Depends(get_current_landlord),
+    session: Session = Depends(get_session),
+):
+    payment, tenant, _ = get_payment_for_landlord(
+        session, payment_id, current_landlord.id
+    )
+
+    body = payload.body.strip()
+    if not body:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Message body is required"
+        )
+
+    dispute = create_dispute_message(
+        session,
+        payment_id=payment.id,
+        author_type=DisputeActorType.LANDLORD,
+        author_id=current_landlord.id,
+        body=body,
+    )
+
+    await notification_service.broadcast_to_tenant(
+        tenant.id,
+        "payment_dispute_message",
+        {
+            "title": "Landlord replied on payment discussion",
+            "message": body,
+            "payment_id": payment.id,
+            "author_type": "landlord",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        },
+    )
+    return build_dispute_response(session, dispute, "landlord")
+
+
+@router.post(
+    "/{payment_id}/dispute/messages/attachments",
+    response_model=PaymentDisputeResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def post_payment_dispute_attachment(
+    payment_id: str,
+    file: UploadFile = File(...),
+    body: Optional[str] = Form(None),
+    current_landlord: Landlord = Depends(get_current_landlord),
+    session: Session = Depends(get_session),
+):
+    payment, tenant, _ = get_payment_for_landlord(
+        session, payment_id, current_landlord.id
+    )
+    (
+        attachment_name,
+        attachment_url,
+        content_type,
+        size_bytes,
+    ) = await save_dispute_attachment(file, payment_id)
+    message_body = (body or "").strip() or f"Attachment shared: {attachment_name}"
+
+    dispute = create_dispute_message(
+        session,
+        payment_id=payment.id,
+        author_type=DisputeActorType.LANDLORD,
+        author_id=current_landlord.id,
+        body=message_body,
+        attachment_name=attachment_name,
+        attachment_url=attachment_url,
+        attachment_content_type=content_type,
+        attachment_size_bytes=size_bytes,
+    )
+
+    await notification_service.broadcast_to_tenant(
+        tenant.id,
+        "payment_dispute_message",
+        {
+            "title": "Landlord shared an attachment",
+            "message": message_body,
+            "payment_id": payment.id,
+            "author_type": "landlord",
+            "attachment_name": attachment_name,
+            "has_attachment": True,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        },
+    )
+    return build_dispute_response(session, dispute, "landlord")
+
+
+@router.put("/{payment_id}/dispute/resolve", response_model=PaymentDisputeResponse)
+async def resolve_payment_dispute(
+    payment_id: str,
+    current_landlord: Landlord = Depends(get_current_landlord),
+    session: Session = Depends(get_session),
+):
+    _, _, _ = get_payment_for_landlord(session, payment_id, current_landlord.id)
+    dispute = resolve_dispute(
+        session,
+        payment_id=payment_id,
+        actor_type=DisputeActorType.LANDLORD,
+        actor_id=current_landlord.id,
+    )
+    return build_dispute_response(session, dispute, "landlord")
+
+
+@router.put("/{payment_id}/dispute/reopen", response_model=PaymentDisputeResponse)
+async def reopen_payment_dispute(
+    payment_id: str,
+    current_landlord: Landlord = Depends(get_current_landlord),
+    session: Session = Depends(get_session),
+):
+    _, _, _ = get_payment_for_landlord(session, payment_id, current_landlord.id)
+    dispute = reopen_dispute(session, payment_id=payment_id)
+    return build_dispute_response(session, dispute, "landlord")
+
+
+@router.get("/{payment_id}/dispute/messages/{message_id}/attachment")
+async def get_payment_dispute_attachment(
+    payment_id: str,
+    message_id: str,
+    viewer=Depends(_get_current_receipt_viewer),
+    session: Session = Depends(get_session),
+):
+    viewer_type, viewer_user = viewer
+
+    if viewer_type == "landlord":
+        _, _, _ = get_payment_for_landlord(session, payment_id, viewer_user.id)
+    else:
+        _ = get_payment_for_tenant(session, payment_id, viewer_user.id)
+
+    message = session.exec(
+        select(PaymentDisputeMessage).where(
+            PaymentDisputeMessage.id == message_id,
+            PaymentDisputeMessage.payment_id == payment_id,
+        )
+    ).first()
+
+    if not message or not message.attachment_url:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Attachment not found"
+        )
+
+    file_path = resolve_dispute_attachment_file_path(message.attachment_url)
+    return FileResponse(
+        file_path,
+        media_type=message.attachment_content_type or "application/octet-stream",
+        filename=message.attachment_name or os.path.basename(file_path),
+    )
+
+
+# =============================================================================
+# Export Endpoints
+# =============================================================================
+
+from app.services.export_service import ExportService
+from app.schemas.export import ExportFormat
+from fastapi.responses import StreamingResponse
+
+
+@router.get("/export")
+async def export_payments(
+    format: ExportFormat = Query(..., description="Export format: 'excel' or 'pdf'"),
+    start_date: Optional[date] = Query(
+        None, description="Start date (default: Jan 1 of current year)"
+    ),
+    end_date: Optional[date] = Query(
+        None, description="End date (default: Dec 31 of current year)"
+    ),
+    property_id: Optional[str] = Query(None, description="Filter by property ID"),
+    tenant_id: Optional[str] = Query(None, description="Filter by tenant ID"),
+    status: Optional[str] = Query(
+        None, description="Filter by status (comma-separated for multiple)"
+    ),
+    current_landlord: Landlord = Depends(get_current_landlord),
+    session: Session = Depends(get_session),
+):
+    """
+    Export payments to Excel or PDF format.
+
+    - **format**: Export format ('excel' or 'pdf')
+    - **start_date**: Filter payments from this date (inclusive). Default: Jan 1 of current year
+    - **end_date**: Filter payments until this date (inclusive). Default: Dec 31 of current year
+    - **property_id**: Filter by specific property
+    - **tenant_id**: Filter by specific tenant
+    - **status**: Filter by payment status (comma-separated for multiple)
+
+    Date range cannot exceed 2 years. Returns a file download.
+    """
+    # Validate and set default dates
+    if not start_date:
+        start_date = date(date.today().year, 1, 1)
+    if not end_date:
+        end_date = date(date.today().year, 12, 31)
+
+    # Validate date range (max 2 years)
+    date_range_days = (end_date - start_date).days
+    if date_range_days > 730:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Date range cannot exceed 2 years",
+        )
+    if date_range_days < 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="End date must be after start date",
+        )
+
+    # Get landlord's tenant IDs
+    tenant_ids = get_landlord_tenant_ids(current_landlord.id, session)
+    if not tenant_ids:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No tenants found",
+        )
+
+    # Build base query
+    query = select(Payment).where(Payment.tenant_id.in_(tenant_ids))
+
+    # Apply date filter (use period_start for date range)
+    query = query.where(Payment.period_start >= start_date)
+    query = query.where(Payment.period_start <= end_date)
+
+    # Apply property filter
+    if property_id:
+        # Get room IDs for the property
+        rooms = session.exec(select(Room).where(Room.property_id == property_id)).all()
+        room_ids = [r.id for r in rooms]
+        property_tenant_ids = [
+            t.id
+            for t in session.exec(
+                select(Tenant).where(Tenant.room_id.in_(room_ids))
+            ).all()
+        ]
+        query = query.where(Payment.tenant_id.in_(property_tenant_ids))
+
+    # Apply tenant filter
+    if tenant_id:
+        if tenant_id not in tenant_ids:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Tenant not found",
+            )
+        query = query.where(Payment.tenant_id == tenant_id)
+
+    # Get payments
+    payments = session.exec(query.order_by(Payment.period_start.desc())).all()
+
+    # Apply status filter (if provided)
+    if status:
+        status_list = [s.strip().upper() for s in status.split(",")]
+        payments = [p for p in payments if p.status.value in status_list]
+
+    # Generate export
+    filename_base = (
+        f"payments_{current_landlord.name.replace(' ', '_')}_{start_date}_{end_date}"
+    )
+
+    if format == ExportFormat.EXCEL:
+        buffer = ExportService.generate_excel(
+            payments=payments,
+            start_date=start_date,
+            end_date=end_date,
+            landlord_name=current_landlord.name,
+        )
+        filename = f"{filename_base}.xlsx"
+        media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    else:  # PDF
+        buffer = ExportService.generate_pdf(
+            payments=payments,
+            start_date=start_date,
+            end_date=end_date,
+            landlord_name=current_landlord.name,
+        )
+        filename = f"{filename_base}.pdf"
+        media_type = "application/pdf"
+
+    return StreamingResponse(
+        buffer,
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Length": str(buffer.getbuffer().nbytes),
+        },
     )
