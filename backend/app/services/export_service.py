@@ -23,9 +23,11 @@ class ExportService:
     """Service for exporting payment data to various formats."""
 
     # LandTen brand colors
-    PRIMARY_COLOR = "6C5DD3"  # Purple
+    PRIMARY_COLOR = "6C5DD3"  # Purple (without # for openpyxl)
+    PRIMARY_COLOR_PDF = "#6C5DD3"  # Purple (with # for reportlab)
     SECONDARY_COLOR = "8B5CF6"  # Light purple
     BG_COLOR = "F3F4F6"  # Light gray
+    BG_COLOR_PDF = "#F3F4F6"  # Light gray (with # for reportlab)
     TEXT_COLOR = "1F2937"  # Dark gray
 
     @staticmethod
@@ -273,7 +275,7 @@ class ExportService:
             "CustomTitle",
             parent=styles["Heading1"],
             fontSize=20,
-            textColor=colors.HexColor(ExportService.PRIMARY_COLOR),
+            textColor=colors.HexColor(ExportService.PRIMARY_COLOR_PDF),
             spaceAfter=12,
             alignment=1,  # Center
         )
@@ -288,7 +290,7 @@ class ExportService:
             "SummaryTitle",
             parent=styles["Heading2"],
             fontSize=14,
-            textColor=colors.HexColor(ExportService.PRIMARY_COLOR),
+            textColor=colors.HexColor(ExportService.PRIMARY_COLOR_PDF),
             spaceAfter=10,
         )
 
@@ -348,7 +350,7 @@ class ExportService:
                         "BACKGROUND",
                         (0, 0),
                         (-1, 0),
-                        colors.HexColor(ExportService.PRIMARY_COLOR),
+                        colors.HexColor(ExportService.PRIMARY_COLOR_PDF),
                     ),
                     ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
                     ("ALIGN", (0, 0), (-1, -1), "LEFT"),
@@ -360,7 +362,7 @@ class ExportService:
                         "BACKGROUND",
                         (0, 1),
                         (-1, -1),
-                        colors.HexColor(ExportService.BG_COLOR),
+                        colors.HexColor(ExportService.BG_COLOR_PDF),
                     ),
                     ("GRID", (0, 0), (-1, -1), 1, colors.grey),
                     ("FONTNAME", (0, 1), (0, -1), "Helvetica-Bold"),
@@ -431,7 +433,7 @@ class ExportService:
                             "BACKGROUND",
                             (0, 0),
                             (-1, 0),
-                            colors.HexColor(ExportService.PRIMARY_COLOR),
+                            colors.HexColor(ExportService.PRIMARY_COLOR_PDF),
                         ),
                         ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
                         ("ALIGN", (0, 0), (-1, -1), "LEFT"),
@@ -447,7 +449,7 @@ class ExportService:
                             "ROWBACKGROUNDS",
                             (0, 1),
                             (-1, -1),
-                            [colors.white, colors.HexColor(ExportService.BG_COLOR)],
+                            [colors.white, colors.HexColor(ExportService.BG_COLOR_PDF)],
                         ),
                     ]
                 )

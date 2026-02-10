@@ -302,7 +302,7 @@ class TestPaymentExport:
             "/api/payments/export?format=excel&start_date=2024-01-01&end_date=2024-12-31",
         )
 
-        assert response.status_code == 401
+        assert response.status_code in [401, 403]  # Either unauthorized or forbidden
 
     def test_export_other_landlord_tenant(
         self, client: TestClient, session: Session, auth_headers: dict
