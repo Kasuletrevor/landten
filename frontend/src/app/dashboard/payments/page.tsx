@@ -6,6 +6,7 @@ import api, {
   PaymentSummary,
   PropertyWithStats,
   PaymentStatus,
+  PaymentDispute,
 } from "@/lib/api";
 import {
   CreditCard,
@@ -22,9 +23,14 @@ import {
   FileSearch,
   Ban,
   Receipt,
+  MessageSquare,
+  Paperclip,
+  Upload,
   Home,
   User,
+  Download,
 } from "lucide-react";
+import ExportModal from "./ExportModal";
 
 export default function PaymentsPage() {
   const [payments, setPayments] = useState<PaymentWithTenant[]>([]);
@@ -43,6 +49,8 @@ export default function PaymentsPage() {
   const [waivePayment, setWaivePayment] = useState<PaymentWithTenant | null>(null);
   const [sendReminderPayment, setSendReminderPayment] = useState<PaymentWithTenant | null>(null);
   const [rejectPayment, setRejectPayment] = useState<PaymentWithTenant | null>(null);
+  const [disputePayment, setDisputePayment] = useState<PaymentWithTenant | null>(null);
+  const [exportModalOpen, setExportModalOpen] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -292,6 +300,15 @@ export default function PaymentsPage() {
             />
           </div>
 
+          {/* Export Button */}
+          <button
+            onClick={() => setExportModalOpen(true)}
+            className="btn btn-secondary"
+          >
+            <Download className="w-4 h-4" />
+            Export
+          </button>
+
           {/* Clear Filters */}
           {(filterProperty || filterStatus || dateRange.start || dateRange.end) && (
             <button
@@ -460,6 +477,18 @@ export default function PaymentsPage() {
                               <Receipt className="w-4 h-4" />
                             </span>
                           )}
+                          <button
+                            onClick={() => setDisputePayment(payment)}
+                            className="btn btn-sm btn-ghost text-[var(--primary-700)] relative"
+                            title="Open payment discussion"
+                          >
+                            <MessageSquare className="w-4 h-4" />
+                            {(payment.dispute_unread_count || 0) > 0 && (
+                              <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full bg-[var(--error)] text-white text-[10px] leading-4">
+                                {payment.dispute_unread_count}
+                              </span>
+                            )}
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -505,6 +534,34 @@ export default function PaymentsPage() {
           onSave={loadData}
         />
       )}
+
+      {disputePayment && (
+        <LandlordDisputeModal
+          payment={disputePayment}
+          onClose={() => setDisputePayment(null)}
+          onSave={loadData}
+        />
+      )}
+
+      {/* Export Modal */}
+      <ExportModal
+        isOpen={exportModalOpen}
+        onClose={() => setExportModalOpen(false)}
+        properties={properties}
+        tenants={payments.map((p) => ({
+          id: p.tenant?.id || "",
+          name: p.tenant?.name || "Unknown",
+          email: p.tenant?.email || "",
+          phone: p.tenant?.phone || "",
+          property: { id: p.property?.id || "", name: p.property?.name || "Unknown" },
+          room: { id: p.room?.id || "", name: p.room?.name || "Unknown" },
+          is_active: true,
+          move_in_date: "",
+          total_payments: 0,
+          total_paid: 0,
+          total_outstanding: 0,
+        }))}
+      />
     </div>
   );
 }
@@ -1081,6 +1138,296 @@ function RejectReceiptModal({
             </button>
           </div>
         </form>
+      </div>
+    </div>
+  );
+}
+
+function LandlordDisputeModal({
+  payment,
+  onClose,
+  onSave,
+}: {
+  payment: PaymentWithTenant;
+  onClose: () => void;
+  onSave: () => void;
+}) {
+  const [thread, setThread] = useState<PaymentDispute | null>(null);
+  const [message, setMessage] = useState("");
+  const [attachmentNote, setAttachmentNote] = useState("");
+  const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSending, setIsSending] = useState(false);
+  const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
+  const [isResolving, setIsResolving] = useState(false);
+  const [isReopening, setIsReopening] = useState(false);
+  const [error, setError] = useState("");
+
+  const loadThread = async () => {
+    setIsLoading(true);
+    setError("");
+    try {
+      const data = await api.getPaymentDispute(payment.id);
+      setThread(data);
+      onSave();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to load dispute thread";
+      if (msg.toLowerCase().includes("dispute not found")) {
+        setThread(null);
+      } else {
+        setError(msg);
+      }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadThread();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [payment.id]);
+
+  const isResolved = (thread?.status || "").toString().toLowerCase() === "resolved";
+
+  const handleSend = async () => {
+    const body = message.trim();
+    if (!body) return;
+    setIsSending(true);
+    setError("");
+    try {
+      const updated = await api.postPaymentDisputeMessage(payment.id, body);
+      setThread(updated);
+      setMessage("");
+      onSave();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to send message");
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  const handleAttachmentUpload = async () => {
+    if (!attachmentFile) return;
+    setIsUploadingAttachment(true);
+    setError("");
+    try {
+      const updated = await api.postPaymentDisputeAttachment(
+        payment.id,
+        attachmentFile,
+        attachmentNote || undefined
+      );
+      setThread(updated);
+      setAttachmentFile(null);
+      setAttachmentNote("");
+      onSave();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to upload attachment");
+    } finally {
+      setIsUploadingAttachment(false);
+    }
+  };
+
+  const handleResolve = async () => {
+    setIsResolving(true);
+    setError("");
+    try {
+      const updated = await api.resolvePaymentDispute(payment.id);
+      setThread(updated);
+      onSave();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to resolve dispute");
+    } finally {
+      setIsResolving(false);
+    }
+  };
+
+  const handleReopen = async () => {
+    setIsReopening(true);
+    setError("");
+    try {
+      const updated = await api.reopenPaymentDispute(payment.id);
+      setThread(updated);
+      onSave();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to reopen dispute");
+    } finally {
+      setIsReopening(false);
+    }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div className="modal max-w-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="modal-header flex items-center justify-between">
+          <h2 className="text-xl font-semibold" style={{ fontFamily: "var(--font-outfit)" }}>
+            Payment Discussion
+          </h2>
+          <button onClick={onClose} className="btn btn-ghost p-2">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="modal-body space-y-4">
+          {error && (
+            <div className="p-3 bg-[var(--error-light)] text-[var(--error)] rounded-lg text-sm">
+              {error}
+            </div>
+          )}
+
+          <div className="flex items-center justify-between gap-4">
+            <p className="text-sm text-[var(--text-secondary)]">
+              Status:{" "}
+              <span
+                className={`font-medium ${
+                  isResolved ? "text-[var(--success)]" : "text-[var(--warning)]"
+                }`}
+              >
+                {isResolved ? "Resolved" : "Open"}
+              </span>
+            </p>
+            {thread && (
+              <div className="flex items-center gap-2">
+                {isResolved ? (
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-secondary"
+                    onClick={handleReopen}
+                    disabled={isReopening}
+                  >
+                    {isReopening ? "Reopening..." : "Reopen"}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-primary"
+                    onClick={handleResolve}
+                    disabled={isResolving}
+                  >
+                    {isResolving ? "Resolving..." : "Resolve"}
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="border border-[var(--border)] rounded-xl p-4 max-h-72 overflow-y-auto space-y-3 bg-[var(--surface-inset)]">
+            {isLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="spinner" />
+              </div>
+            ) : !thread || thread.messages.length === 0 ? (
+              <p className="text-sm text-[var(--text-muted)]">
+                No discussion yet. Add a message to start clarification with the tenant.
+              </p>
+            ) : (
+              thread.messages.map((entry) => (
+                <div key={entry.id} className="p-3 rounded-lg bg-[var(--surface)] border border-[var(--border)]">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-medium">
+                      {entry.author_type === "landlord" ? "You" : payment.tenant_name || "Tenant"}
+                    </p>
+                    <p className="text-xs text-[var(--text-muted)]">
+                      {new Date(entry.created_at).toLocaleString()}
+                    </p>
+                  </div>
+                  <p className="text-sm text-[var(--text-secondary)] mt-1 whitespace-pre-wrap">
+                    {entry.body}
+                  </p>
+                  {entry.attachment_url && (
+                    <div className="mt-2">
+                      <a
+                        href={api.getPaymentDisputeAttachmentUrl(payment.id, entry.id)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-2 text-xs text-[var(--primary-700)] hover:underline"
+                      >
+                        <Paperclip className="w-3.5 h-3.5" />
+                        {entry.attachment_name || "View attachment"}
+                      </a>
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+
+          <div>
+            <label className="label">Message</label>
+            <textarea
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              className="input min-h-[110px]"
+              placeholder={
+                isResolved
+                  ? "This thread is resolved. Reopen it to send another message."
+                  : "Explain discrepancies, references, or next action..."
+              }
+              disabled={isResolved || isSending}
+            />
+          </div>
+
+          <div className="border border-[var(--border)] rounded-xl p-3 bg-[var(--surface)]">
+            <label className="label mb-2">Attachment (optional)</label>
+            <input
+              type="file"
+              accept=".png,.jpg,.jpeg,.pdf"
+              className="input"
+              onChange={(e) => setAttachmentFile(e.target.files?.[0] || null)}
+              disabled={isResolved || isUploadingAttachment}
+            />
+            <textarea
+              value={attachmentNote}
+              onChange={(e) => setAttachmentNote(e.target.value)}
+              className="input min-h-[72px] mt-2"
+              placeholder="Optional note for this attachment..."
+              disabled={isResolved || isUploadingAttachment}
+            />
+            <div className="mt-2 flex justify-end">
+              <button
+                type="button"
+                onClick={handleAttachmentUpload}
+                disabled={isLoading || isResolved || isUploadingAttachment || !attachmentFile}
+                className="btn btn-secondary btn-sm"
+              >
+                {isUploadingAttachment ? (
+                  <>
+                    <div className="spinner" />
+                    Uploading...
+                  </>
+                ) : (
+                  <>
+                    <Upload className="w-4 h-4" />
+                    Send Attachment
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="modal-footer">
+          <button type="button" onClick={onClose} className="btn btn-secondary">
+            Close
+          </button>
+          <button
+            type="button"
+            onClick={handleSend}
+            disabled={isLoading || isResolved || isSending || !message.trim()}
+            className="btn btn-primary"
+          >
+            {isSending ? (
+              <>
+                <div className="spinner" />
+                Sending...
+              </>
+            ) : (
+              <>
+                <MessageSquare className="w-4 h-4" />
+                Send Message
+              </>
+            )}
+          </button>
+        </div>
       </div>
     </div>
   );
