@@ -284,6 +284,38 @@ class ApiClient {
     });
   }
 
+  async postTenantPaymentDisputeAttachment(paymentId: string, file: File, body?: string) {
+    const formData = new FormData();
+    formData.append("file", file);
+    if (body) {
+      formData.append("body", body);
+    }
+
+    const token = this.getToken();
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(
+      `${API_BASE}/tenant-auth/payments/${paymentId}/dispute/messages/attachments`,
+      {
+        method: "POST",
+        body: formData,
+        headers,
+      }
+    );
+
+    if (!response.ok) {
+      const error: ApiError = await response.json().catch(() => ({
+        detail: "An error occurred during upload",
+      }));
+      throw new Error(error.detail);
+    }
+
+    return response.json() as Promise<PaymentDispute>;
+  }
+
   // Payment Schedule
   async createPaymentSchedule(
     tenantId: string,
@@ -396,6 +428,38 @@ class ApiClient {
     });
   }
 
+  async postPaymentDisputeAttachment(paymentId: string, file: File, body?: string) {
+    const formData = new FormData();
+    formData.append("file", file);
+    if (body) {
+      formData.append("body", body);
+    }
+
+    const token = this.getToken();
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(
+      `${API_BASE}/payments/${paymentId}/dispute/messages/attachments`,
+      {
+        method: "POST",
+        body: formData,
+        headers,
+      }
+    );
+
+    if (!response.ok) {
+      const error: ApiError = await response.json().catch(() => ({
+        detail: "An error occurred during upload",
+      }));
+      throw new Error(error.detail);
+    }
+
+    return response.json() as Promise<PaymentDispute>;
+  }
+
   async resolvePaymentDispute(paymentId: string) {
     return this.request<PaymentDispute>(`/payments/${paymentId}/dispute/resolve`, {
       method: "PUT",
@@ -406,6 +470,12 @@ class ApiClient {
     return this.request<PaymentDispute>(`/payments/${paymentId}/dispute/reopen`, {
       method: "PUT",
     });
+  }
+
+  getPaymentDisputeAttachmentUrl(paymentId: string, messageId: string) {
+    const token = this.getToken();
+    const query = token ? `?token=${encodeURIComponent(token)}` : "";
+    return `${API_BASE}/payments/${paymentId}/dispute/messages/${messageId}/attachment${query}`;
   }
 
   async uploadPaymentReceipt(paymentId: string, file: File) {
@@ -505,6 +575,44 @@ class ApiClient {
 
     eventSource.onerror = (error) => {
       console.error("SSE error:", error);
+    };
+
+    return () => eventSource.close();
+  }
+
+  subscribeToTenantNotifications(onMessage: (event: SSEEvent) => void): () => void {
+    const token = this.getToken();
+    if (!token) {
+      console.error("No token for tenant SSE");
+      return () => {};
+    }
+
+    const eventSource = new EventSource(
+      `${API_BASE}/tenant-auth/stream?token=${token}`
+    );
+
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        onMessage({ type: event.type || "message", data });
+      } catch (e) {
+        console.error("Tenant SSE parse error:", e);
+      }
+    };
+
+    eventSource.addEventListener("connected", () => {
+      console.log("Tenant SSE connected");
+    });
+
+    eventSource.addEventListener("payment_dispute_message", (event) => {
+      onMessage({
+        type: "payment_dispute_message",
+        data: JSON.parse((event as MessageEvent).data),
+      });
+    });
+
+    eventSource.onerror = (error) => {
+      console.error("Tenant SSE error:", error);
     };
 
     return () => eventSource.close();
@@ -663,6 +771,43 @@ class ApiClient {
     if (!response.ok) {
       const error = await response.json().catch(() => ({
         detail: "An error occurred during download",
+      }));
+      throw new Error(error.detail);
+    }
+
+    return response.blob();
+  }
+
+  // Export
+  async exportPayments(params: {
+    format: "excel" | "pdf";
+    start_date?: string;
+    end_date?: string;
+    property_id?: string;
+    tenant_id?: string;
+    status?: string;
+  }): Promise<Blob> {
+    const queryParams = new URLSearchParams();
+    queryParams.set("format", params.format);
+    if (params.start_date) queryParams.set("start_date", params.start_date);
+    if (params.end_date) queryParams.set("end_date", params.end_date);
+    if (params.property_id) queryParams.set("property_id", params.property_id);
+    if (params.tenant_id) queryParams.set("tenant_id", params.tenant_id);
+    if (params.status) queryParams.set("status", params.status);
+
+    const token = this.getToken();
+    const response = await fetch(
+      `${API_BASE}/payments/export?${queryParams.toString()}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({
+        detail: "Export failed",
       }));
       throw new Error(error.detail);
     }
@@ -854,6 +999,10 @@ export interface PaymentDisputeMessage {
   author_type: DisputeActorType;
   author_id: string;
   body: string;
+  attachment_name?: string | null;
+  attachment_url?: string | null;
+  attachment_content_type?: string | null;
+  attachment_size_bytes?: number | null;
   created_at: string;
 }
 
