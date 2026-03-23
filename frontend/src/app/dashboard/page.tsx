@@ -6,6 +6,7 @@ import api, {
   PropertyListResponse,
   PaymentWithTenant,
   DashboardAnalytics,
+  MaintenanceRequest,
 } from "@/lib/api";
 import {
   Building2,
@@ -19,6 +20,7 @@ import {
   TrendingUp,
   Home,
   BarChart3,
+  Wrench,
 } from "lucide-react";
 import TrendChart from "@/components/trend-chart";
 
@@ -27,21 +29,25 @@ export default function DashboardPage() {
   const [analytics, setAnalytics] = useState<DashboardAnalytics | null>(null);
   const [overduePayments, setOverduePayments] = useState<PaymentWithTenant[]>([]);
   const [upcomingPayments, setUpcomingPayments] = useState<PaymentWithTenant[]>([]);
+  const [maintenanceRequests, setMaintenanceRequests] = useState<MaintenanceRequest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [propertiesRes, analyticsRes, overdueRes, upcomingRes] = await Promise.all([
+        const [propertiesRes, analyticsRes, overdueRes, upcomingRes, maintenanceRes] =
+          await Promise.all([
           api.getProperties(),
           api.getAnalytics(),
           api.getOverduePayments(),
           api.getUpcomingPayments(7),
+          api.getMaintenanceRequests(),
         ]);
         setProperties(propertiesRes);
         setAnalytics(analyticsRes);
         setOverduePayments(overdueRes.payments);
         setUpcomingPayments(upcomingRes.payments);
+        setMaintenanceRequests(maintenanceRes.requests);
       } catch (error) {
         console.error("Failed to load dashboard data:", error);
       } finally {
@@ -97,6 +103,21 @@ export default function DashboardPage() {
 
   const incomeTrend = getTrendIndicator(analytics?.income_trend || null);
   const collectionTrend = getTrendIndicator(analytics?.collection_trend || null);
+  const openMaintenanceRequests = maintenanceRequests.filter(
+    (request) => request.status !== "completed" && request.status !== "cancelled"
+  );
+  const emergencyMaintenanceCount = openMaintenanceRequests.filter(
+    (request) => request.urgency === "emergency"
+  ).length;
+  const inProgressMaintenanceCount = openMaintenanceRequests.filter(
+    (request) => request.status === "in_progress"
+  ).length;
+  const maintenancePreview = openMaintenanceRequests
+    .slice(0, 4)
+    .sort(
+      (a, b) =>
+        new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+    );
 
   return (
     <div className="animate-fade-in">
@@ -302,6 +323,83 @@ export default function DashboardPage() {
 
       {/* Content Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Maintenance Widget */}
+        <div className="card lg:col-span-2 animate-slide-up" style={{ animationDelay: "0.25s" }}>
+          <div className="p-4 border-b border-[var(--border)] flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Wrench className="w-5 h-5 text-[var(--accent-600)]" />
+              <h3
+                className="font-semibold"
+                style={{ fontFamily: "var(--font-outfit)" }}
+              >
+                Maintenance
+              </h3>
+              {openMaintenanceRequests.length > 0 && (
+                <span className="badge badge-warning">{openMaintenanceRequests.length} open</span>
+              )}
+            </div>
+            <Link
+              href="/dashboard/maintenance"
+              className="text-sm text-[var(--primary-600)] hover:text-[var(--primary-700)] font-medium"
+            >
+              Manage requests
+            </Link>
+          </div>
+
+          <div className="p-4 space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-inset)] p-3">
+                <p className="text-xs uppercase tracking-wide text-[var(--text-muted)]">Open</p>
+                <p className="text-xl font-semibold mt-1">{openMaintenanceRequests.length}</p>
+              </div>
+              <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-inset)] p-3">
+                <p className="text-xs uppercase tracking-wide text-[var(--text-muted)]">Emergency</p>
+                <p className="text-xl font-semibold mt-1 text-[var(--error)]">{emergencyMaintenanceCount}</p>
+              </div>
+              <div className="rounded-xl border border-[var(--border)] bg-[var(--surface-inset)] p-3">
+                <p className="text-xs uppercase tracking-wide text-[var(--text-muted)]">In Progress</p>
+                <p className="text-xl font-semibold mt-1 text-[var(--info)]">{inProgressMaintenanceCount}</p>
+              </div>
+            </div>
+
+            {maintenancePreview.length === 0 ? (
+              <p className="text-sm text-[var(--text-secondary)]">
+                No active maintenance requests right now.
+              </p>
+            ) : (
+              <div className="divide-y divide-[var(--border)] border border-[var(--border)] rounded-xl overflow-hidden">
+                {maintenancePreview.map((request) => (
+                  <div key={request.id} className="p-3 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-medium text-sm truncate">{request.title}</p>
+                      <p className="text-xs text-[var(--text-muted)] truncate">
+                        {request.tenant_name || "Tenant"} - {request.property_name || "Property"}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      <span
+                        className={`badge ${
+                          request.urgency === "emergency"
+                            ? "badge-error"
+                            : request.urgency === "high"
+                            ? "badge-warning"
+                            : request.urgency === "medium"
+                            ? "badge-info"
+                            : "badge-neutral"
+                        }`}
+                      >
+                        {request.urgency}
+                      </span>
+                      <span className="badge badge-neutral">
+                        {request.status.replace("_", " ")}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
         {/* Overdue Payments */}
         <div className="card animate-slide-up stagger-5">
           <div className="p-4 border-b border-[var(--border)] flex items-center justify-between">
@@ -516,3 +614,4 @@ export default function DashboardPage() {
     </div>
   );
 }
+

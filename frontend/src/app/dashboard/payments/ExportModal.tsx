@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import api, { PropertyWithStats, TenantWithDetails } from "@/lib/api";
+import api, { PropertyWithStats } from "@/lib/api";
 import {
   Download,
   FileSpreadsheet,
@@ -19,7 +19,12 @@ interface ExportModalProps {
   isOpen: boolean;
   onClose: () => void;
   properties: PropertyWithStats[];
-  tenants: TenantWithDetails[];
+  tenants: Array<{
+    id: string;
+    name: string;
+    property: { name: string };
+    room: { name: string };
+  }>;
 }
 
 export default function ExportModal({
@@ -132,9 +137,9 @@ export default function ExportModal({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="card max-w-2xl w-full max-h-[90vh] overflow-y-auto animate-slide-up">
+      <div className="card max-w-2xl w-full max-h-[92vh] overflow-y-auto animate-slide-up">
         {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b border-[var(--border)]">
+        <div className="flex items-start sm:items-center justify-between p-4 sm:p-6 border-b border-[var(--border)] gap-3">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-[var(--primary-100)] flex items-center justify-center">
               <Download className="w-5 h-5 text-[var(--primary-600)]" />
@@ -150,7 +155,7 @@ export default function ExportModal({
           </div>
           <button
             onClick={onClose}
-            className="btn btn-ghost p-2"
+            className="btn btn-ghost p-2 min-h-11 min-w-11"
             disabled={isLoading}
           >
             <X className="w-5 h-5" />
@@ -158,7 +163,7 @@ export default function ExportModal({
         </div>
 
         {/* Content */}
-        <div className="p-6 space-y-6">
+        <div className="p-4 sm:p-6 space-y-6">
           {error && (
             <div className="p-3 bg-[var(--error-light)] text-[var(--error)] rounded-lg text-sm flex items-center gap-2">
               <AlertCircle className="w-4 h-4 flex-shrink-0" />
@@ -169,11 +174,11 @@ export default function ExportModal({
           {/* Format Selection */}
           <div>
             <label className="label mb-2">Export Format</label>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <button
                 type="button"
                 onClick={() => setFormat("excel")}
-                className={`p-4 rounded-xl border-2 flex items-center gap-3 transition-all ${
+                className={`p-4 rounded-xl border-2 flex items-center gap-3 transition-all min-h-11 ${
                   format === "excel"
                     ? "border-[var(--primary-500)] bg-[var(--primary-50)]"
                     : "border-[var(--border)] hover:border-[var(--primary-300)]"
@@ -193,7 +198,7 @@ export default function ExportModal({
               <button
                 type="button"
                 onClick={() => setFormat("pdf")}
-                className={`p-4 rounded-xl border-2 flex items-center gap-3 transition-all ${
+                className={`p-4 rounded-xl border-2 flex items-center gap-3 transition-all min-h-11 ${
                   format === "pdf"
                     ? "border-[var(--primary-500)] bg-[var(--primary-50)]"
                     : "border-[var(--border)] hover:border-[var(--primary-300)]"
@@ -219,26 +224,26 @@ export default function ExportModal({
               <button
                 type="button"
                 onClick={() => handleQuickSelect("this_year")}
-                className="btn btn-sm btn-secondary"
+                className="btn btn-sm btn-secondary min-h-11"
               >
                 This Year
               </button>
               <button
                 type="button"
                 onClick={() => handleQuickSelect("last_year")}
-                className="btn btn-sm btn-secondary"
+                className="btn btn-sm btn-secondary min-h-11"
               >
                 Last Year
               </button>
               <button
                 type="button"
                 onClick={() => handleQuickSelect("last_12_months")}
-                className="btn btn-sm btn-secondary"
+                className="btn btn-sm btn-secondary min-h-11"
               >
                 Last 12 Months
               </button>
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="text-xs text-[var(--text-muted)] mb-1 block">Start Date</label>
                 <div className="relative">
@@ -354,12 +359,12 @@ export default function ExportModal({
         </div>
 
         {/* Footer */}
-        <div className="flex justify-end gap-3 p-6 border-t border-[var(--border)]">
+        <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-3 p-4 sm:p-6 border-t border-[var(--border)]">
           <button
             type="button"
             onClick={onClose}
             disabled={isLoading}
-            className="btn btn-secondary"
+            className="btn btn-secondary min-h-11 w-full sm:w-auto"
           >
             Cancel
           </button>
@@ -367,7 +372,7 @@ export default function ExportModal({
             type="button"
             onClick={handleExport}
             disabled={isLoading}
-            className="btn btn-primary"
+            className="btn btn-primary min-h-11 w-full sm:w-auto"
           >
             {isLoading ? (
               <>

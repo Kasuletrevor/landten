@@ -11,6 +11,7 @@ import {
   Home,
   Users,
   CreditCard,
+  Wrench,
   Bell,
   LogOut,
   Menu,
@@ -22,6 +23,7 @@ const navItems = [
   { href: "/dashboard/properties", label: "Properties", icon: Home },
   { href: "/dashboard/tenants", label: "Tenants", icon: Users },
   { href: "/dashboard/payments", label: "Payments", icon: CreditCard },
+  { href: "/dashboard/maintenance", label: "Maintenance", icon: Wrench },
   { href: "/dashboard/notifications", label: "Notifications", icon: Bell },
 ];
 
@@ -40,16 +42,6 @@ export default function DashboardLayout({
       router.push("/login");
     }
   }, [isLoading, isAuthenticated, router]);
-
-  // Close sidebar when route changes
-  useEffect(() => {
-    // We don't need to manually close the sidebar on route change via state here
-    // if we handle it correctly in the render or via link clicks.
-    // However, if we must:
-    if (sidebarOpen) {
-       setSidebarOpen(false);
-    }
-  }, [pathname, sidebarOpen]);
 
   if (isLoading) {
     return (
@@ -146,6 +138,7 @@ export default function DashboardLayout({
                 <Link
                   key={item.href}
                   href={item.href}
+                  onClick={() => setSidebarOpen(false)}
                   className={`sidebar-nav-item ${isActive ? "active" : ""}`}
                 >
                   <item.icon className="w-5 h-5" />
