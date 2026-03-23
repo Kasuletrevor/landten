@@ -551,8 +551,19 @@ def test_tenant_timestamps(
     tenant = tenant_factory(room_id=room.id)
     after_creation = datetime.now(timezone.utc)
 
-    assert before_creation <= tenant.created_at <= after_creation
-    assert before_creation <= tenant.updated_at <= after_creation
+    created_at = (
+        tenant.created_at
+        if tenant.created_at.tzinfo is not None
+        else tenant.created_at.replace(tzinfo=timezone.utc)
+    )
+    updated_at = (
+        tenant.updated_at
+        if tenant.updated_at.tzinfo is not None
+        else tenant.updated_at.replace(tzinfo=timezone.utc)
+    )
+
+    assert before_creation <= created_at <= after_creation
+    assert before_creation <= updated_at <= after_creation
 
 
 def test_tenant_update_timestamp(

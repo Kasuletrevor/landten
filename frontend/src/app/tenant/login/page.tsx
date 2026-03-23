@@ -1,13 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import api from "@/lib/api";
 import { Building2, Mail, Lock, AlertCircle, ArrowRight, Eye, EyeOff } from "lucide-react";
 
 export default function TenantLoginPage() {
-  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -20,12 +18,9 @@ export default function TenantLoginPage() {
     setIsLoading(true);
 
     try {
-      const res = await api.tenantLogin(email, password);
-      // We manually set the token here since our AuthContext is primarily for Landlords
-      // A more robust solution would be to update AuthContext to handle both user types
-      // For now, we'll store it and redirect to the tenant dashboard
-      api.setToken(res.access_token);
-      router.push("/tenant/dashboard");
+      await api.tenantLogin(email, password);
+      // Force a full reload so AuthContext rehydrates userType as tenant.
+      window.location.href = "/tenant/dashboard";
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to login");
     } finally {

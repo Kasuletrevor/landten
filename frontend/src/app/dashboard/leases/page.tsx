@@ -10,18 +10,12 @@ import api, {
 import {
   FileText,
   Upload,
-  Download,
   CheckCircle,
   Clock,
   AlertCircle,
   Search,
-  Filter,
   X,
   Trash2,
-  Home,
-  User,
-  Calendar,
-  DollarSign,
 } from "lucide-react";
 
 export default function LeasesPage() {
@@ -90,6 +84,12 @@ export default function LeasesPage() {
       day: "numeric",
       year: "numeric",
     });
+  };
+
+  const openLeaseUrl = (url?: string) => {
+    if (!url) return;
+    const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
+    window.open(`${apiBase}${url}`, "_blank");
   };
 
   const statusConfig = {
@@ -192,26 +192,26 @@ export default function LeasesPage() {
       {/* Quick Actions - Tenants Without Lease */}
       {tenantsWithoutLease.length > 0 && (
         <div className="card p-4 mb-6 animate-slide-up stagger-1 bg-[var(--warning-light)] border-[var(--warning)]">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
             <div className="flex items-center gap-3">
               <AlertCircle className="w-5 h-5 text-[var(--warning)]" />
               <span className="font-medium">
                 {tenantsWithoutLease.length} tenant{tenantsWithoutLease.length !== 1 ? "s" : ""} without lease agreement
               </span>
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2 w-full lg:w-auto">
               {tenantsWithoutLease.slice(0, 3).map((tenant) => (
                 <button
                   key={tenant.id}
                   onClick={() => setUploadLease(tenant)}
-                  className="btn btn-sm btn-primary"
+                  className="btn btn-sm btn-primary min-h-11 w-full sm:w-auto"
                 >
                   <Upload className="w-4 h-4" />
                   Upload for {tenant.name}
                 </button>
               ))}
               {tenantsWithoutLease.length > 3 && (
-                <span className="text-sm text-[var(--text-muted)] self-center">
+                <span className="text-sm text-[var(--text-muted)] self-center w-full lg:w-auto">
                   +{tenantsWithoutLease.length - 3} more
                 </span>
               )}
@@ -276,7 +276,7 @@ export default function LeasesPage() {
                 setFilterStatus("");
                 setSearchQuery("");
               }}
-              className="btn btn-ghost text-sm"
+              className="btn btn-ghost text-sm w-full sm:w-auto min-h-11"
             >
               <X className="w-4 h-4" />
               Clear
@@ -304,7 +304,99 @@ export default function LeasesPage() {
         </div>
       ) : (
         <div className="card overflow-hidden animate-slide-up stagger-3">
-          <div className="overflow-x-auto">
+          <div className="md:hidden divide-y divide-[var(--border)]">
+            {filteredLeases.map((lease, i) => {
+              const status = statusConfig[lease.status];
+              return (
+                <div
+                  key={lease.id}
+                  className="p-4 space-y-3 animate-fade-in"
+                  style={{ animationDelay: `${i * 0.03}s` }}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-semibold truncate">{lease.tenant_name || "Unknown"}</p>
+                      <p className="text-xs text-[var(--text-muted)] truncate">
+                        {lease.property_name} • {lease.room_name}
+                      </p>
+                    </div>
+                    <span className={`badge ${status.class} flex-shrink-0`}>
+                      <status.icon className="w-3 h-3 inline mr-1" />
+                      {status.label}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                      <p className="text-[var(--text-muted)] text-xs">Lease Start</p>
+                      <p>{formatDate(lease.start_date)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[var(--text-muted)] text-xs">Lease End</p>
+                      <p>{formatDate(lease.end_date)}</p>
+                    </div>
+                    <div>
+                      <p className="text-[var(--text-muted)] text-xs">Rent</p>
+                      <p className="font-semibold">
+                        {lease.rent_amount != null ? formatCurrency(lease.rent_amount) : "-"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[var(--text-muted)] text-xs">Uploaded By</p>
+                      <p>{lease.uploaded_by_landlord ? "Landlord" : "Tenant"}</p>
+                    </div>
+                  </div>
+
+                  {lease.signed_uploaded_by && (
+                    <p className="text-xs text-[var(--text-muted)]">
+                      Signed by: {lease.signed_uploaded_by}
+                    </p>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <button
+                      onClick={() => openLeaseUrl(lease.original_url)}
+                      className="btn btn-secondary min-h-11"
+                      title="View Original"
+                    >
+                      <FileText className="w-4 h-4" />
+                      Original
+                    </button>
+                    {lease.status === "UNSIGNED" ? (
+                      <button
+                        onClick={() => setUploadSigned(lease)}
+                        className="btn btn-primary min-h-11"
+                        title="Upload Signed Copy"
+                      >
+                        <Upload className="w-4 h-4" />
+                        Upload Signed
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => openLeaseUrl(lease.signed_url)}
+                        className="btn btn-secondary min-h-11"
+                        title="View Signed"
+                        disabled={!lease.signed_url}
+                      >
+                        <CheckCircle className="w-4 h-4" />
+                        Signed Copy
+                      </button>
+                    )}
+                    <button
+                      onClick={() => setDeleteLease(lease)}
+                      className="btn btn-danger min-h-11 col-span-2"
+                      title="Delete lease"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      Delete Lease
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="hidden md:block overflow-x-auto">
             <table className="table">
               <thead>
                 <tr>
@@ -356,7 +448,7 @@ export default function LeasesPage() {
                       </td>
                       <td>
                         <span className="font-semibold">
-                          {formatCurrency(lease.rent_amount)}
+                          {lease.rent_amount != null ? formatCurrency(lease.rent_amount) : "-"}
                         </span>
                       </td>
                       <td>
@@ -378,33 +470,33 @@ export default function LeasesPage() {
                       <td>
                         <div className="flex items-center justify-end gap-1">
                           <button
-                            onClick={() => window.open(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"}${lease.original_url}`, "_blank")}
-                            className="btn btn-sm btn-ghost"
+                            onClick={() => openLeaseUrl(lease.original_url)}
+                            className="btn btn-sm btn-ghost min-h-11 min-w-11"
                             title="View Original"
                           >
                             <FileText className="w-4 h-4" />
                           </button>
                           {lease.status === "UNSIGNED" && (
-                            <button
-                              onClick={() => setUploadSigned(lease)}
-                              className="btn btn-sm btn-ghost text-[var(--success)]"
-                              title="Upload Signed Copy"
-                            >
-                              <Upload className="w-4 h-4" />
+                              <button
+                                onClick={() => setUploadSigned(lease)}
+                                className="btn btn-sm btn-ghost text-[var(--success)] min-h-11 min-w-11"
+                                title="Upload Signed Copy"
+                              >
+                                <Upload className="w-4 h-4" />
                             </button>
                           )}
                           {lease.signed_url && (
-                            <button
-                              onClick={() => window.open(`${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api"}${lease.signed_url}`, "_blank")}
-                              className="btn btn-sm btn-ghost text-[var(--success)]"
-                              title="View Signed"
-                            >
-                              <CheckCircle className="w-4 h-4" />
+                              <button
+                                onClick={() => openLeaseUrl(lease.signed_url)}
+                                className="btn btn-sm btn-ghost text-[var(--success)] min-h-11 min-w-11"
+                                title="View Signed"
+                              >
+                                <CheckCircle className="w-4 h-4" />
                             </button>
                           )}
                           <button
                             onClick={() => setDeleteLease(lease)}
-                            className="btn btn-sm btn-ghost text-[var(--error)]"
+                            className="btn btn-sm btn-ghost text-[var(--error)] min-h-11 min-w-11"
                             title="Delete"
                           >
                             <Trash2 className="w-4 h-4" />

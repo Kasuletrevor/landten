@@ -13,6 +13,14 @@ from app.models.payment_dispute import (
     DisputeActorType,
 )
 from app.models.lease_agreement import LeaseAgreement, LeaseStatus
+from app.models.maintenance import (
+    MaintenanceRequest,
+    MaintenanceComment,
+    MaintenanceCategory,
+    MaintenanceUrgency,
+    MaintenanceStatus,
+    MaintenanceAuthorType,
+)
 
 __all__ = [
     "Landlord",
@@ -31,4 +39,10 @@ __all__ = [
     "DisputeActorType",
     "LeaseAgreement",
     "LeaseStatus",
+    "MaintenanceRequest",
+    "MaintenanceComment",
+    "MaintenanceCategory",
+    "MaintenanceUrgency",
+    "MaintenanceStatus",
+    "MaintenanceAuthorType",
 ]

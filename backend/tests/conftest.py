@@ -10,6 +10,7 @@ from datetime import date, datetime, timezone
 from fastapi.testclient import TestClient
 from sqlmodel import Session, SQLModel, create_engine
 from sqlmodel.pool import StaticPool
+from sqlalchemy import event
 
 from app.main import app
 from app.core.database import get_session
@@ -49,6 +50,13 @@ def session_fixture():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
+
+    @event.listens_for(engine, "connect")
+    def _set_sqlite_pragma(dbapi_connection, _connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
     SQLModel.metadata.create_all(engine)
     with Session(engine) as session:
         yield session
@@ -63,9 +71,15 @@ def client_fixture(session: Session):
     def get_session_override():
         return session
 
+    # Isolate slowapi in-memory counters per test.
+    if hasattr(app.state, "limiter"):
+        app.state.limiter.reset()
+
     app.dependency_overrides[get_session] = get_session_override
     client = TestClient(app)
     yield client
+    if hasattr(app.state, "limiter"):
+        app.state.limiter.reset()
     app.dependency_overrides.clear()
 
 

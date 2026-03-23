@@ -1,6 +1,6 @@
 import { useState } from "react";
-import api, { Payment, PaymentStatus } from "@/lib/api";
-import { Upload, X, FileText, CheckCircle, AlertCircle } from "lucide-react";
+import api, { Payment } from "@/lib/api";
+import { Upload, X, CheckCircle, AlertCircle } from "lucide-react";
 
 interface ReceiptUploadModalProps {
   payment: Payment;
@@ -34,9 +34,9 @@ export default function ReceiptUploadModal({
     try {
       const updatedPayment = await api.uploadPaymentReceipt(payment.id, file);
       onSuccess(updatedPayment);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      setError(err.message || "Failed to upload receipt");
+      setError(err instanceof Error ? err.message : "Failed to upload receipt");
     } finally {
       setIsUploading(false);
     }
@@ -44,20 +44,20 @@ export default function ReceiptUploadModal({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm animate-fade-in">
-      <div className="bg-[var(--surface)] rounded-2xl w-full max-w-md shadow-2xl border border-[var(--border)] overflow-hidden animate-scale-up">
-        <div className="p-6 border-b border-[var(--border)] flex items-center justify-between bg-[var(--surface-inset)]">
+      <div className="bg-[var(--surface)] rounded-2xl w-full max-w-md max-h-[92vh] shadow-2xl border border-[var(--border)] overflow-y-auto animate-scale-up">
+        <div className="p-4 sm:p-6 border-b border-[var(--border)] flex items-center justify-between bg-[var(--surface-inset)]">
           <h3 className="text-lg font-semibold" style={{ fontFamily: "var(--font-outfit)" }}>
             Upload Proof of Payment
           </h3>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-[var(--background)] rounded-full transition-colors text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+            className="p-2 min-h-11 min-w-11 hover:bg-[var(--background)] rounded-full transition-colors text-[var(--text-muted)] hover:text-[var(--text-primary)]"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="p-6">
+        <div className="p-4 sm:p-6">
           {error && (
             <div className="mb-6 p-4 bg-[var(--error-light)] text-[var(--error)] rounded-xl flex items-start gap-3 text-sm">
               <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
@@ -104,11 +104,11 @@ export default function ReceiptUploadModal({
             </label>
           </div>
 
-          <div className="flex gap-3">
+          <div className="flex flex-col-reverse sm:flex-row gap-3">
             <button
               type="button"
               onClick={onClose}
-              className="btn btn-ghost flex-1"
+              className="btn btn-ghost flex-1 min-h-11"
               disabled={isUploading}
             >
               Cancel
@@ -116,7 +116,7 @@ export default function ReceiptUploadModal({
             <button
               onClick={handleSubmit}
               disabled={!file || isUploading}
-              className="btn btn-primary flex-1 flex items-center justify-center gap-2"
+              className="btn btn-primary flex-1 min-h-11 flex items-center justify-center gap-2"
             >
               {isUploading ? (
                 <>

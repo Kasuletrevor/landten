@@ -3,50 +3,39 @@
  */
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
+const API_PUBLIC_BASE = API_BASE.replace(/\/api\/?$/, "");
 
 interface ApiError {
   detail: string;
 }
 
 class ApiClient {
-  private token: string | null = null;
-
-  setToken(token: string | null) {
-    this.token = token;
+  setToken(_token: string | null) {
+    // Cookie-based auth is the source of truth.
+    // Keep this method for backward compatibility and to clear legacy storage.
+    void _token;
     if (typeof window !== "undefined") {
-      if (token) {
-        localStorage.setItem("landten_token", token);
-      } else {
-        localStorage.removeItem("landten_token");
-      }
+      localStorage.removeItem("landten_token");
     }
   }
 
   getToken(): string | null {
-    if (this.token) return this.token;
-    if (typeof window !== "undefined") {
-      this.token = localStorage.getItem("landten_token");
-    }
-    return this.token;
+    return null;
   }
 
   private async request<T>(
     endpoint: string,
     options: RequestInit = {}
   ): Promise<T> {
-    const token = this.getToken();
     const headers: HeadersInit = {
       "Content-Type": "application/json",
       ...(options.headers || {}),
     };
 
-    if (token) {
-      (headers as Record<string, string>)["Authorization"] = `Bearer ${token}`;
-    }
-
     const response = await fetch(`${API_BASE}${endpoint}`, {
       ...options,
       headers,
+      credentials: "include",
     });
 
     if (!response.ok) {
@@ -93,6 +82,10 @@ class ApiClient {
       method: "PUT",
       body: JSON.stringify(data),
     });
+  }
+
+  async logout() {
+    return this.request<void>("/auth/logout", { method: "POST" });
   }
 
   // Properties
@@ -260,6 +253,10 @@ class ApiClient {
     return this.request<TenantPortalResponse>("/tenant-auth/me");
   }
 
+  async tenantLogout() {
+    return this.request<void>("/tenant-auth/logout", { method: "POST" });
+  }
+
   async getTenantPaymentsMe() {
     return this.request<{
       payments: Payment[];
@@ -281,6 +278,113 @@ class ApiClient {
     return this.request<PaymentDispute>(`/tenant-auth/payments/${paymentId}/dispute/messages`, {
       method: "POST",
       body: JSON.stringify({ body }),
+    });
+  }
+
+  async postTenantPaymentDisputeAttachment(paymentId: string, file: File, body?: string) {
+    const formData = new FormData();
+    formData.append("file", file);
+    if (body) {
+      formData.append("body", body);
+    }
+
+    const token = this.getToken();
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(
+      `${API_BASE}/tenant-auth/payments/${paymentId}/dispute/messages/attachments`,
+      {
+        method: "POST",
+        body: formData,
+        headers,
+        credentials: "include",
+      }
+    );
+
+    if (!response.ok) {
+      const error: ApiError = await response.json().catch(() => ({
+        detail: "An error occurred during upload",
+      }));
+      throw new Error(error.detail);
+    }
+
+    return response.json() as Promise<PaymentDispute>;
+  }
+
+  // Maintenance (Tenant Side)
+  async getTenantMaintenanceRequests() {
+    return this.request<MaintenanceRequestListResponse>("/tenant-auth/maintenance");
+  }
+
+  async createTenantMaintenanceRequest(data: {
+    category: MaintenanceCategory;
+    urgency: MaintenanceUrgency;
+    title: string;
+    description: string;
+    preferred_entry_time?: string;
+  }) {
+    return this.request<MaintenanceRequest>("/tenant-auth/maintenance", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getTenantMaintenanceRequest(requestId: string) {
+    return this.request<MaintenanceRequest>(`/tenant-auth/maintenance/${requestId}`);
+  }
+
+  async addTenantMaintenanceComment(requestId: string, body: string) {
+    return this.request<MaintenanceRequest>(
+      `/tenant-auth/maintenance/${requestId}/comments`,
+      {
+        method: "POST",
+        body: JSON.stringify({ body }),
+      }
+    );
+  }
+
+  async addTenantMaintenanceAttachment(requestId: string, file: File, body?: string) {
+    const formData = new FormData();
+    formData.append("file", file);
+    if (body) {
+      formData.append("body", body);
+    }
+
+    const response = await fetch(
+      `${API_BASE}/tenant-auth/maintenance/${requestId}/comments/attachments`,
+      {
+        method: "POST",
+        body: formData,
+        credentials: "include",
+      }
+    );
+
+    if (!response.ok) {
+      const error: ApiError = await response.json().catch(() => ({
+        detail: "An error occurred during upload",
+      }));
+      throw new Error(error.detail);
+    }
+
+    return response.json() as Promise<MaintenanceRequest>;
+  }
+
+  async resolveTenantMaintenanceRequest(
+    requestId: string,
+    data?: { tenant_rating?: number; tenant_feedback?: string }
+  ) {
+    return this.request<MaintenanceRequest>(`/tenant-auth/maintenance/${requestId}/resolve`, {
+      method: "PUT",
+      body: JSON.stringify(data || {}),
+    });
+  }
+
+  async reopenTenantMaintenanceRequest(requestId: string) {
+    return this.request<MaintenanceRequest>(`/tenant-auth/maintenance/${requestId}/reopen`, {
+      method: "PUT",
     });
   }
 
@@ -396,6 +500,39 @@ class ApiClient {
     });
   }
 
+  async postPaymentDisputeAttachment(paymentId: string, file: File, body?: string) {
+    const formData = new FormData();
+    formData.append("file", file);
+    if (body) {
+      formData.append("body", body);
+    }
+
+    const token = this.getToken();
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(
+      `${API_BASE}/payments/${paymentId}/dispute/messages/attachments`,
+      {
+        method: "POST",
+        body: formData,
+        headers,
+        credentials: "include",
+      }
+    );
+
+    if (!response.ok) {
+      const error: ApiError = await response.json().catch(() => ({
+        detail: "An error occurred during upload",
+      }));
+      throw new Error(error.detail);
+    }
+
+    return response.json() as Promise<PaymentDispute>;
+  }
+
   async resolvePaymentDispute(paymentId: string) {
     return this.request<PaymentDispute>(`/payments/${paymentId}/dispute/resolve`, {
       method: "PUT",
@@ -406,6 +543,19 @@ class ApiClient {
     return this.request<PaymentDispute>(`/payments/${paymentId}/dispute/reopen`, {
       method: "PUT",
     });
+  }
+
+  getPaymentDisputeAttachmentUrl(paymentId: string, messageId: string) {
+    return `${API_BASE}/payments/${paymentId}/dispute/messages/${messageId}/attachment`;
+  }
+
+  getPublicAssetUrl(path?: string | null) {
+    if (!path) return "";
+    if (/^https?:\/\//i.test(path)) {
+      return path;
+    }
+    const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+    return `${API_PUBLIC_BASE}${normalizedPath}`;
   }
 
   async uploadPaymentReceipt(paymentId: string, file: File) {
@@ -422,6 +572,7 @@ class ApiClient {
       method: "POST",
       body: formData,
       headers,
+      credentials: "include",
     });
 
     if (!response.ok) {
@@ -432,6 +583,80 @@ class ApiClient {
     }
 
     return response.json() as Promise<PaymentWithTenant>;
+  }
+
+  // Maintenance (Landlord Side)
+  async getMaintenanceRequests(filters?: {
+    status?: MaintenanceStatusValue;
+    urgency?: MaintenanceUrgency;
+    property_id?: string;
+    search?: string;
+  }) {
+    const params = new URLSearchParams();
+    if (filters?.status) params.set("status", filters.status);
+    if (filters?.urgency) params.set("urgency", filters.urgency);
+    if (filters?.property_id) params.set("property_id", filters.property_id);
+    if (filters?.search) params.set("search", filters.search);
+    const query = params.toString() ? `?${params.toString()}` : "";
+    return this.request<MaintenanceRequestListResponse>(`/maintenance${query}`);
+  }
+
+  async getMaintenanceRequest(requestId: string) {
+    return this.request<MaintenanceRequest>(`/maintenance/${requestId}`);
+  }
+
+  async updateMaintenanceRequest(
+    requestId: string,
+    data: {
+      status?: MaintenanceStatusValue;
+      assigned_to?: string;
+      scheduled_visit_at?: string;
+      estimated_cost?: number;
+      actual_cost?: number;
+      landlord_notes?: string;
+    }
+  ) {
+    return this.request<MaintenanceRequest>(`/maintenance/${requestId}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async addMaintenanceComment(requestId: string, body: string, isInternal = false) {
+    return this.request<MaintenanceRequest>(`/maintenance/${requestId}/comments`, {
+      method: "POST",
+      body: JSON.stringify({ body, is_internal: isInternal }),
+    });
+  }
+
+  async addMaintenanceAttachment(
+    requestId: string,
+    file: File,
+    options?: { body?: string; is_internal?: boolean }
+  ) {
+    const formData = new FormData();
+    formData.append("file", file);
+    if (options?.body) {
+      formData.append("body", options.body);
+    }
+    if (options?.is_internal !== undefined) {
+      formData.append("is_internal", String(options.is_internal));
+    }
+
+    const response = await fetch(`${API_BASE}/maintenance/${requestId}/comments/attachments`, {
+      method: "POST",
+      body: formData,
+      credentials: "include",
+    });
+
+    if (!response.ok) {
+      const error: ApiError = await response.json().catch(() => ({
+        detail: "An error occurred during upload",
+      }));
+      throw new Error(error.detail);
+    }
+
+    return response.json() as Promise<MaintenanceRequest>;
   }
 
   // Notifications
@@ -452,7 +677,7 @@ class ApiClient {
     return this.request<void>("/notifications/read-all", { method: "PUT" });
   }
 
-  async sendPaymentReminder(paymentId: string, method: "email" | "sms" | "both") {
+  async sendPaymentReminder(paymentId: string, method: "email") {
     return this.request<{ message: string; results: Record<string, string> }>(
       `/notifications/send-reminder/${paymentId}?method=${method}`,
       { method: "POST" }
@@ -461,15 +686,12 @@ class ApiClient {
 
   // SSE Stream
   subscribeToNotifications(onMessage: (event: SSEEvent) => void): () => void {
-    const token = this.getToken();
-    if (!token) {
-      console.error("No token for SSE");
-      return () => {};
-    }
-
-    const eventSource = new EventSource(
-      `${API_BASE}/notifications/stream?token=${token}`
-    );
+    const eventSource = new EventSource(`${API_BASE}/notifications/stream`, {
+      withCredentials: true,
+    });
+    const forwardEvent = (type: string) => (event: Event) => {
+      onMessage({ type, data: JSON.parse((event as MessageEvent).data) });
+    };
 
     eventSource.onmessage = (event) => {
       try {
@@ -503,8 +725,51 @@ class ApiClient {
       });
     });
 
+    ["maintenance_request_created", "maintenance_request_updated", "maintenance_comment_created"].forEach(
+      (type) => eventSource.addEventListener(type, forwardEvent(type))
+    );
+
     eventSource.onerror = (error) => {
       console.error("SSE error:", error);
+    };
+
+    return () => eventSource.close();
+  }
+
+  subscribeToTenantNotifications(onMessage: (event: SSEEvent) => void): () => void {
+    const eventSource = new EventSource(`${API_BASE}/tenant-auth/stream`, {
+      withCredentials: true,
+    });
+    const forwardEvent = (type: string) => (event: Event) => {
+      onMessage({ type, data: JSON.parse((event as MessageEvent).data) });
+    };
+
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        onMessage({ type: event.type || "message", data });
+      } catch (e) {
+        console.error("Tenant SSE parse error:", e);
+      }
+    };
+
+    eventSource.addEventListener("connected", () => {
+      console.log("Tenant SSE connected");
+    });
+
+    eventSource.addEventListener("payment_dispute_message", (event) => {
+      onMessage({
+        type: "payment_dispute_message",
+        data: JSON.parse((event as MessageEvent).data),
+      });
+    });
+
+    ["payment_receipt_rejected", "maintenance_request_updated", "maintenance_comment_created"].forEach(
+      (type) => eventSource.addEventListener(type, forwardEvent(type))
+    );
+
+    eventSource.onerror = (error) => {
+      console.error("Tenant SSE error:", error);
     };
 
     return () => eventSource.close();
@@ -553,6 +818,7 @@ class ApiClient {
       method: "POST",
       body: formData,
       headers,
+      credentials: "include",
     });
 
     if (!response.ok) {
@@ -579,6 +845,7 @@ class ApiClient {
       method: "POST",
       body: formData,
       headers,
+      credentials: "include",
     });
 
     if (!response.ok) {
@@ -636,6 +903,7 @@ class ApiClient {
       method: "POST",
       body: formData,
       headers,
+      credentials: "include",
     });
 
     if (!response.ok) {
@@ -658,11 +926,46 @@ class ApiClient {
     const response = await fetch(`${API_BASE}/leases/tenant/my-lease/download`, {
       method: "GET",
       headers,
+      credentials: "include",
     });
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({
         detail: "An error occurred during download",
+      }));
+      throw new Error(error.detail);
+    }
+
+    return response.blob();
+  }
+
+  // Export
+  async exportPayments(params: {
+    format: "excel" | "pdf";
+    start_date?: string;
+    end_date?: string;
+    property_id?: string;
+    tenant_id?: string;
+    status?: string;
+  }): Promise<Blob> {
+    const queryParams = new URLSearchParams();
+    queryParams.set("format", params.format);
+    if (params.start_date) queryParams.set("start_date", params.start_date);
+    if (params.end_date) queryParams.set("end_date", params.end_date);
+    if (params.property_id) queryParams.set("property_id", params.property_id);
+    if (params.tenant_id) queryParams.set("tenant_id", params.tenant_id);
+    if (params.status) queryParams.set("status", params.status);
+
+    const response = await fetch(
+      `${API_BASE}/payments/export?${queryParams.toString()}`,
+      {
+        credentials: "include",
+      }
+    );
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({
+        detail: "Export failed",
       }));
       throw new Error(error.detail);
     }
@@ -854,6 +1157,10 @@ export interface PaymentDisputeMessage {
   author_type: DisputeActorType;
   author_id: string;
   body: string;
+  attachment_name?: string | null;
+  attachment_url?: string | null;
+  attachment_content_type?: string | null;
+  attachment_size_bytes?: number | null;
   created_at: string;
 }
 
@@ -872,6 +1179,73 @@ export interface PaymentDispute {
   last_message_at?: string | null;
   unread_count: number;
   messages: PaymentDisputeMessage[];
+}
+
+export type MaintenanceCategory =
+  | "plumbing"
+  | "electrical"
+  | "appliance"
+  | "structural"
+  | "other";
+
+export type MaintenanceUrgency = "emergency" | "high" | "medium" | "low";
+
+export type MaintenanceStatusValue =
+  | "submitted"
+  | "acknowledged"
+  | "in_progress"
+  | "completed"
+  | "cancelled";
+
+export type MaintenanceAuthorType = "landlord" | "tenant" | "system";
+
+export interface MaintenanceComment {
+  id: string;
+  request_id: string;
+  author_type: MaintenanceAuthorType;
+  author_id: string;
+  body: string;
+  is_internal: boolean;
+  attachment_name?: string | null;
+  attachment_url?: string | null;
+  attachment_content_type?: string | null;
+  attachment_size_bytes?: number | null;
+  created_at: string;
+}
+
+export interface MaintenanceRequest {
+  id: string;
+  tenant_id: string;
+  property_id: string;
+  room_id: string;
+  category: MaintenanceCategory;
+  urgency: MaintenanceUrgency;
+  status: MaintenanceStatusValue;
+  title: string;
+  description: string;
+  preferred_entry_time?: string | null;
+  assigned_to?: string | null;
+  scheduled_visit_at?: string | null;
+  estimated_cost?: number | null;
+  actual_cost?: number | null;
+  landlord_notes?: string | null;
+  completed_at?: string | null;
+  tenant_rating?: number | null;
+  tenant_feedback?: string | null;
+  created_at: string;
+  updated_at: string;
+  tenant_name?: string | null;
+  tenant_email?: string | null;
+  tenant_phone?: string | null;
+  property_name?: string | null;
+  room_name?: string | null;
+  comments_count: number;
+  comments: MaintenanceComment[];
+}
+
+export interface MaintenanceRequestListResponse {
+  requests: MaintenanceRequest[];
+  total: number;
 }
 
 export interface PaymentListResponse {

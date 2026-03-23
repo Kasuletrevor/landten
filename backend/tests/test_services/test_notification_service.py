@@ -3,6 +3,7 @@ Comprehensive tests for notification service.
 Tests SSE connections, broadcasting, and notification creation.
 """
 
+import logging
 import pytest
 import asyncio
 from datetime import date
@@ -10,6 +11,7 @@ from sqlmodel import Session
 
 from app.services import notification_service
 from app.models.notification import Notification, NotificationType
+from tests.factories import LandlordFactory
 
 
 class TestFormatSSEEvent:
@@ -146,6 +148,27 @@ class TestBroadcastToLandlord:
             landlord_id, "test", {"data": "test"}
         )
 
+    @pytest.mark.asyncio
+    async def test_broadcast_logs_connection_failures(self, caplog: pytest.LogCaptureFixture):
+        """Test queue send failures are logged instead of swallowed silently."""
+        landlord_id = "broadcast-failure"
+
+        class FailingQueue:
+            async def put(self, _event: str) -> None:
+                raise RuntimeError("queue is broken")
+
+        notification_service._connections[landlord_id] = {FailingQueue()}
+
+        with caplog.at_level(logging.ERROR):
+            await notification_service.broadcast_to_landlord(
+                landlord_id, "test_event", {"message": "hello"}
+            )
+
+        assert "Failed to broadcast SSE event" in caplog.text
+        assert "queue is broken" in caplog.text
+
+        del notification_service._connections[landlord_id]
+
 
 class TestGetActiveConnectionsCount:
     """Tests for connection counting."""
@@ -173,8 +196,9 @@ class TestNotificationCreation:
     @pytest.mark.asyncio
     async def test_notify_payment_due(self, session: Session):
         """Test payment due notification creation."""
+        landlord = LandlordFactory.create(session=session)
         notification = Notification(
-            landlord_id="landlord-1",
+            landlord_id=landlord.id,
             type=NotificationType.PAYMENT_DUE,
             title="Payment Due",
             message="Test message",
@@ -191,8 +215,9 @@ class TestNotificationCreation:
     @pytest.mark.asyncio
     async def test_notify_payment_overdue(self, session: Session):
         """Test payment overdue notification creation."""
+        landlord = LandlordFactory.create(session=session)
         notification = Notification(
-            landlord_id="landlord-1",
+            landlord_id=landlord.id,
             type=NotificationType.PAYMENT_OVERDUE,
             title="Payment Overdue",
             message="Overdue message",
@@ -206,8 +231,9 @@ class TestNotificationCreation:
     @pytest.mark.asyncio
     async def test_notify_payment_received(self, session: Session):
         """Test payment received notification creation."""
+        landlord = LandlordFactory.create(session=session)
         notification = Notification(
-            landlord_id="landlord-1",
+            landlord_id=landlord.id,
             type=NotificationType.PAYMENT_RECEIVED,
             title="Payment Received",
             message="Received message",
@@ -221,8 +247,9 @@ class TestNotificationCreation:
     @pytest.mark.asyncio
     async def test_notify_tenant_added(self, session: Session):
         """Test tenant added notification creation."""
+        landlord = LandlordFactory.create(session=session)
         notification = Notification(
-            landlord_id="landlord-1",
+            landlord_id=landlord.id,
             type=NotificationType.TENANT_ADDED,
             title="New Tenant Added",
             message="Tenant added message",
@@ -237,8 +264,9 @@ class TestNotificationCreation:
     @pytest.mark.asyncio
     async def test_notify_reminder_sent(self, session: Session):
         """Test reminder sent notification creation."""
+        landlord = LandlordFactory.create(session=session)
         notification = Notification(
-            landlord_id="landlord-1",
+            landlord_id=landlord.id,
             type=NotificationType.REMINDER_SENT,
             title="Reminder Sent",
             message="Reminder sent via email",
@@ -251,8 +279,9 @@ class TestNotificationCreation:
 
     def test_notification_mark_as_read(self, session: Session):
         """Test marking notification as read."""
+        landlord = LandlordFactory.create(session=session)
         notification = Notification(
-            landlord_id="landlord-1",
+            landlord_id=landlord.id,
             type=NotificationType.PAYMENT_DUE,
             title="Test",
             message="Test message",

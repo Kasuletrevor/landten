@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from typing import Literal, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import StreamingResponse
 from sqlmodel import Session, select
-from typing import Optional
 
 from app.core.database import get_session
-from app.core.security import get_current_landlord
+from app.core.security import get_current_landlord, decode_token, get_token_from_request
 from app.models.landlord import Landlord
 from app.models.property import Property
 from app.models.room import Room
@@ -12,21 +13,47 @@ from app.models.tenant import Tenant
 from app.models.payment import Payment
 from app.models.notification import Notification
 from app.schemas.notification import NotificationResponse, NotificationListResponse
-from app.services import notification_service, email_service, sms_service
+from app.services import email_service, notification_service
 
 router = APIRouter(prefix="/notifications", tags=["Notifications"])
 
 
 @router.get("/stream")
 async def notification_stream(
-    current_landlord: Landlord = Depends(get_current_landlord),
+    request: Request,
+    session: Session = Depends(get_session),
 ):
     """
     Server-Sent Events endpoint for real-time notifications.
     Connect to this endpoint to receive live updates.
     """
+    bearer_token = get_token_from_request(request)
+    if not bearer_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    payload = decode_token(bearer_token)
+    if payload is None or payload.get("type", "landlord") != "landlord":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    landlord_id = payload.get("sub")
+    landlord = session.get(Landlord, landlord_id) if landlord_id else None
+    if landlord is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     return StreamingResponse(
-        notification_service.subscribe(current_landlord.id),
+        notification_service.subscribe(landlord.id),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -123,7 +150,7 @@ async def mark_all_notifications_read(
 @router.post("/send-reminder/{payment_id}")
 async def send_payment_reminder(
     payment_id: str,
-    method: str = Query("email", regex="^(email|sms|both)$"),
+    method: Literal["email"] = Query("email"),
     current_landlord: Landlord = Depends(get_current_landlord),
     session: Session = Depends(get_session),
 ):
@@ -132,7 +159,7 @@ async def send_payment_reminder(
 
     Args:
         payment_id: The payment to send reminder for
-        method: "email", "sms", or "both"
+        method: "email"
     """
     # Get payment and verify ownership
     payment = session.get(Payment, payment_id)
@@ -157,10 +184,9 @@ async def send_payment_reminder(
             status_code=status.HTTP_404_NOT_FOUND, detail="Payment not found"
         )
 
-    results = {"email": None, "sms": None}
+    results = {"email": None}
 
-    # Send email
-    if method in ["email", "both"] and tenant.email:
+    if tenant.email:
         email_sent = await email_service.send_payment_reminder(
             tenant_name=tenant.name,
             tenant_email=tenant.email,
@@ -169,23 +195,11 @@ async def send_payment_reminder(
             property_name=property.name,
             room_name=room.name,
             landlord_name=current_landlord.name,
+            currency=room.currency,
         )
         results["email"] = "sent" if email_sent else "failed"
-    elif method in ["email", "both"]:
+    else:
         results["email"] = "no_email"
-
-    # Send SMS
-    if method in ["sms", "both"] and tenant.phone:
-        sms_sent = await sms_service.send_payment_reminder_sms(
-            phone_number=tenant.phone,
-            tenant_name=tenant.name,
-            amount=payment.amount_due,
-            due_date=payment.due_date.strftime("%B %d"),
-            property_name=property.name,
-        )
-        results["sms"] = "sent" if sms_sent else "failed"
-    elif method in ["sms", "both"]:
-        results["sms"] = "no_phone"
 
     # Record that reminder was sent
     await notification_service.notify_reminder_sent(

@@ -366,22 +366,23 @@ def test_room_empty_tenants(session, landlord_factory, property_factory, room_fa
 def test_room_tenant_deletion_behavior(
     session, landlord_factory, property_factory, room_factory, tenant_factory
 ):
-    """Test tenant behavior when room is deleted."""
+    """Test room deletion is blocked when tenants still reference it."""
+    from sqlalchemy.exc import IntegrityError
+
     landlord = landlord_factory()
     prop = property_factory(landlord_id=landlord.id)
     room = room_factory(property_id=prop.id)
     tenant = tenant_factory(room_id=room.id)
     tenant_id = tenant.id
 
-    # Delete room
-    session.delete(room)
-    session.commit()
+    with pytest.raises(IntegrityError):
+        session.delete(room)
+        session.commit()
+    session.rollback()
 
-    # Verify tenant still exists (no cascade delete)
+    # Tenant should still exist after failed delete.
     statement = select(Tenant).where(Tenant.id == tenant_id)
     result = session.exec(statement).first()
-
-    # Tenant remains but room_id becomes invalid reference
     assert result is not None
 
 
@@ -453,8 +454,19 @@ def test_room_timestamps(session, landlord_factory, property_factory, room_facto
     room = room_factory(property_id=prop.id)
     after_creation = datetime.now(timezone.utc)
 
-    assert before_creation <= room.created_at <= after_creation
-    assert before_creation <= room.updated_at <= after_creation
+    created_at = (
+        room.created_at
+        if room.created_at.tzinfo is not None
+        else room.created_at.replace(tzinfo=timezone.utc)
+    )
+    updated_at = (
+        room.updated_at
+        if room.updated_at.tzinfo is not None
+        else room.updated_at.replace(tzinfo=timezone.utc)
+    )
+
+    assert before_creation <= created_at <= after_creation
+    assert before_creation <= updated_at <= after_creation
 
 
 def test_room_update_timestamp(

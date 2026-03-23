@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import api, { Payment, TenantPortalResponse, PaymentStatus, PaymentDispute, LeaseAgreement } from "@/lib/api";
 import ReceiptUploadModal from "./ReceiptUploadModal";
+import TenantMaintenanceSection from "./TenantMaintenanceSection";
 import {
   Building2,
   LogOut,
@@ -19,7 +20,8 @@ import {
   X,
   FileText,
   Upload,
-  Download
+  Download,
+  Paperclip
 } from "lucide-react";
 
 export default function TenantDashboardPage() {
@@ -41,11 +43,6 @@ export default function TenantDashboardPage() {
   const normalizeStatus = (status: PaymentStatus) => String(status).toUpperCase();
 
   useEffect(() => {
-    const token = api.getToken();
-    if (!token) {
-      router.push("/tenant/login");
-      return;
-    }
     loadData();
   }, [router]);
 
@@ -61,13 +58,14 @@ export default function TenantDashboardPage() {
     } catch (err) {
       console.error(err);
       setError("Failed to load dashboard data. Please try logging in again.");
-      // Optionally redirect to login on 401
+      router.push("/tenant/login");
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await api.tenantLogout().catch(() => {});
     api.setToken(null);
     router.push("/tenant/login");
   };
@@ -343,6 +341,8 @@ export default function TenantDashboardPage() {
            </div>
          </section>
 
+         <TenantMaintenanceSection />
+
          {/* Lease Agreement Section */}
          <LeaseSection />
        </main>
@@ -584,10 +584,12 @@ function PaymentStatusBanner({
   roomCurrency?: string;
   onUploadClick: (payment: Payment) => void;
 }) {
-  // Find next actionable payment (upcoming, pending, or overdue)
-  const nextPayment = payments.find((p) =>
-    ["UPCOMING", "PENDING", "OVERDUE"].includes(String(p.status).toUpperCase())
-  );
+  const rejectedPayment = payments.find((p) => Boolean(p.rejection_reason));
+  const nextPayment =
+    rejectedPayment ||
+    payments.find((p) =>
+      ["UPCOMING", "PENDING", "OVERDUE"].includes(String(p.status).toUpperCase())
+    );
 
   if (!nextPayment) return null;
 
@@ -601,21 +603,34 @@ function PaymentStatusBanner({
 
   const isOverdue = diffDays < 0;
   const isDueSoon = diffDays >= 0 && diffDays <= 5;
+  const hasRejectedReceipt = Boolean(nextPayment.rejection_reason);
 
   // Determine styling based on status
-  const bgColor = isOverdue
+  const bgColor = hasRejectedReceipt
+    ? "bg-[var(--error-light)]"
+    : isOverdue
     ? "bg-[var(--error-light)]"
     : isDueSoon
     ? "bg-[var(--warning-light)]"
     : "bg-[var(--success-light)]";
-  const textColor = isOverdue
+  const textColor = hasRejectedReceipt
+    ? "text-[var(--error)]"
+    : isOverdue
     ? "text-[var(--error)]"
     : isDueSoon
     ? "text-[var(--warning)]"
     : "text-[var(--success)]";
-  const IconComponent = isOverdue ? AlertTriangle : isDueSoon ? Clock : Calendar;
+  const IconComponent = hasRejectedReceipt
+    ? AlertTriangle
+    : isOverdue
+    ? AlertTriangle
+    : isDueSoon
+    ? Clock
+    : Calendar;
 
-  const message = isOverdue
+  const message = hasRejectedReceipt
+    ? "Receipt rejected and needs a new upload"
+    : isOverdue
     ? `Rent overdue by ${Math.abs(diffDays)} day${Math.abs(diffDays) !== 1 ? "s" : ""}`
     : diffDays === 0
     ? "Rent due today"
@@ -661,13 +676,18 @@ function PaymentStatusBanner({
               {formatBannerCurrency(nextPayment.amount_due, roomCurrency)} due{" "}
               {formatBannerDate(nextPayment.due_date)}
             </p>
+            {hasRejectedReceipt && (
+              <p className="text-sm text-[var(--error)] mt-1">
+                {nextPayment.rejection_reason}
+              </p>
+            )}
           </div>
         </div>
         <button
           onClick={() => onUploadClick(nextPayment)}
-          className={`btn ${isOverdue ? "btn-danger" : "btn-primary"} btn-sm whitespace-nowrap`}
+          className={`btn ${hasRejectedReceipt || isOverdue ? "btn-danger" : "btn-primary"} btn-sm whitespace-nowrap`}
         >
-          Upload Receipt
+          {hasRejectedReceipt ? "Upload New Receipt" : "Upload Receipt"}
         </button>
       </div>
     </div>
@@ -683,8 +703,11 @@ function TenantDisputeModal({
 }) {
   const [thread, setThread] = useState<PaymentDispute | null>(null);
   const [message, setMessage] = useState("");
+  const [attachmentNote, setAttachmentNote] = useState("");
+  const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSending, setIsSending] = useState(false);
+  const [isUploadingAttachment, setIsUploadingAttachment] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -725,6 +748,26 @@ function TenantDisputeModal({
       setError(err instanceof Error ? err.message : "Failed to send message");
     } finally {
       setIsSending(false);
+    }
+  };
+
+  const handleAttachmentUpload = async () => {
+    if (!attachmentFile) return;
+    setIsUploadingAttachment(true);
+    setError("");
+    try {
+      const updated = await api.postTenantPaymentDisputeAttachment(
+        payment.id,
+        attachmentFile,
+        attachmentNote || undefined
+      );
+      setThread(updated);
+      setAttachmentFile(null);
+      setAttachmentNote("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to upload attachment");
+    } finally {
+      setIsUploadingAttachment(false);
     }
   };
 
@@ -777,6 +820,19 @@ function TenantDisputeModal({
                   <p className="text-sm text-[var(--text-secondary)] mt-1 whitespace-pre-wrap">
                     {entry.body}
                   </p>
+                  {entry.attachment_url && (
+                    <div className="mt-2">
+                      <a
+                        href={api.getPaymentDisputeAttachmentUrl(payment.id, entry.id)}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-2 text-xs text-[var(--primary-700)] hover:underline"
+                      >
+                        <Paperclip className="w-3.5 h-3.5" />
+                        {entry.attachment_name || "View attachment"}
+                      </a>
+                    </div>
+                  )}
                 </div>
               ))
             )}
@@ -795,6 +851,49 @@ function TenantDisputeModal({
               }
               disabled={isResolved || isSending}
             />
+          </div>
+
+          <div className="border border-[var(--border)] rounded-xl p-3 bg-[var(--surface)]">
+            <label className="label mb-2">Attachment (optional)</label>
+            <input
+              type="file"
+              accept=".png,.jpg,.jpeg,.pdf"
+              className="input"
+              onChange={(e) => setAttachmentFile(e.target.files?.[0] || null)}
+              disabled={isResolved || isUploadingAttachment}
+            />
+            <textarea
+              value={attachmentNote}
+              onChange={(e) => setAttachmentNote(e.target.value)}
+              className="input min-h-[72px] mt-2"
+              placeholder="Optional note for this attachment..."
+              disabled={isResolved || isUploadingAttachment}
+            />
+            <div className="mt-2 flex justify-end">
+              <button
+                type="button"
+                onClick={handleAttachmentUpload}
+                disabled={
+                  isLoading ||
+                  isResolved ||
+                  isUploadingAttachment ||
+                  !attachmentFile
+                }
+                className="btn btn-secondary btn-sm"
+              >
+                {isUploadingAttachment ? (
+                  <>
+                    <div className="spinner" />
+                    Uploading...
+                  </>
+                ) : (
+                  <>
+                    <Upload className="w-4 h-4" />
+                    Send Attachment
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
 

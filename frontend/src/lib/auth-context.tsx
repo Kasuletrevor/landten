@@ -37,35 +37,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Check for existing session on mount
   useEffect(() => {
-    const token = api.getToken();
-    if (token) {
-      // First try as landlord
-      api.getMe()
-        .then((landlord) => {
-          setUser(landlord);
-          setUserType("landlord");
-          setIsLoading(false);
-        })
-        .catch(() => {
-          // If that fails, try as tenant
-          api.getTenantMe()
-            .then((tenant) => {
-              setUser(tenant);
-              setUserType("tenant");
-            })
-            .catch(() => {
-              // Both failed, clear token
-              api.setToken(null);
-            })
-            .finally(() => {
-              setIsLoading(false);
-            });
-        });
-    } else {
-        // We defer this slightly to avoid the "setState synchronously within an effect" warning
-        // if this effect runs immediately on mount
-        Promise.resolve().then(() => setIsLoading(false));
-    }
+    // Cookie-backed session restore:
+    // first try landlord profile, then tenant profile.
+    api.getMe()
+      .then((landlord) => {
+        setUser(landlord);
+        setUserType("landlord");
+      })
+      .catch(() => {
+        api.getTenantMe()
+          .then((tenant) => {
+            setUser(tenant);
+            setUserType("tenant");
+          })
+          .catch(() => {
+            api.setToken(null);
+          });
+      })
+      .finally(() => {
+        setIsLoading(false);
+      });
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {
@@ -95,6 +86,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const logout = useCallback(() => {
+    api.logout().catch(() => {});
+    api.tenantLogout().catch(() => {});
     api.setToken(null);
     setUser(null);
     setUserType(null);

@@ -15,6 +15,7 @@ from app.core.database import engine
 from app.routers import (
     analytics,
     auth,
+    maintenance,
     properties,
     rooms,
     tenants,
@@ -26,6 +27,9 @@ from app.routers import (
 from app.services.payment_service import (
     generate_all_due_payments,
     update_payment_statuses,
+)
+from app.services.automated_notification_service import (
+    send_automated_payment_notifications,
 )
 
 # Background scheduler
@@ -50,6 +54,23 @@ def run_daily_payment_tasks():
             print(f"[Scheduler] Generated {len(generated)} new payments")
 
 
+async def run_daily_notification_tasks():
+    """
+    Run automated reminder tasks:
+    - due reminders (3 days, 1 day, and day-of due date)
+    - overdue notices (day 1, day 7, and day 14)
+    """
+    with Session(engine) as session:
+        summary = await send_automated_payment_notifications(session)
+        if summary["reminders_sent"]:
+            print(
+                "[Scheduler] Sent "
+                f"{summary['reminders_sent']} automated reminders "
+                f"(due={summary['due_candidates']}, "
+                f"overdue={summary['overdue_candidates']})"
+            )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
@@ -62,6 +83,7 @@ async def lifespan(app: FastAPI):
 
     # Run payment tasks immediately on startup
     run_daily_payment_tasks()
+    await run_daily_notification_tasks()
 
     # Schedule daily tasks at 1:00 AM
     scheduler.add_job(
@@ -69,6 +91,13 @@ async def lifespan(app: FastAPI):
         trigger=CronTrigger(hour=1, minute=0),
         id="daily_payment_tasks",
         name="Daily Payment Status Updates and Generation",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        run_daily_notification_tasks,
+        trigger=CronTrigger(hour=9, minute=0),
+        id="daily_notification_tasks",
+        name="Daily Automated Payment Reminders",
         replace_existing=True,
     )
     scheduler.start()
@@ -90,6 +119,8 @@ from app.core.rate_limit import limiter
 
 # Create uploads directory if it doesn't exist
 os.makedirs("uploads/receipts", exist_ok=True)
+os.makedirs("uploads/disputes", exist_ok=True)
+os.makedirs("uploads/maintenance", exist_ok=True)
 os.makedirs("uploads/leases", exist_ok=True)
 
 # Create FastAPI app
@@ -124,6 +155,7 @@ app.include_router(properties.router, prefix="/api")
 app.include_router(rooms.router, prefix="/api")
 app.include_router(tenants.router, prefix="/api")
 app.include_router(payments.router, prefix="/api")
+app.include_router(maintenance.router, prefix="/api")
 app.include_router(notifications.router, prefix="/api")
 app.include_router(analytics.router, prefix="/api")
 app.include_router(leases.router, prefix="/api")

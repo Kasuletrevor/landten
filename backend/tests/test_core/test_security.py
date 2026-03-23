@@ -6,7 +6,7 @@ import pytest
 from datetime import datetime, timedelta, timezone
 from jose import jwt, JWTError
 from fastapi import HTTPException, status
-from fastapi.security import HTTPAuthorizationCredentials
+from starlette.requests import Request
 
 from app.core.security import (
     verify_password,
@@ -19,6 +19,14 @@ from app.core.security import (
 from app.core.config import settings
 from app.models.landlord import Landlord
 from app.models.tenant import Tenant
+
+
+def _request_with_bearer(token: str | None) -> Request:
+    headers = []
+    if token:
+        headers.append((b"authorization", f"Bearer {token}".encode("utf-8")))
+    scope = {"type": "http", "method": "GET", "path": "/", "headers": headers}
+    return Request(scope)
 
 
 # =============================================================================
@@ -202,9 +210,9 @@ class TestCurrentLandlordDependency:
         """Test getting current landlord with valid token."""
         # Create valid landlord token
         token = create_access_token(data={"sub": auth_landlord.id, "type": "landlord"})
-        credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
+        request = _request_with_bearer(token)
 
-        landlord = await get_current_landlord(credentials=credentials, session=session)
+        landlord = await get_current_landlord(request=request, session=session)
 
         assert landlord.id == auth_landlord.id
         assert landlord.email == auth_landlord.email
@@ -212,12 +220,10 @@ class TestCurrentLandlordDependency:
     @pytest.mark.asyncio
     async def test_get_current_landlord_invalid_token(self, session):
         """Test getting landlord with invalid token."""
-        credentials = HTTPAuthorizationCredentials(
-            scheme="Bearer", credentials="invalid.token.here"
-        )
+        request = _request_with_bearer("invalid.token.here")
 
         with pytest.raises(HTTPException) as exc_info:
-            await get_current_landlord(credentials=credentials, session=session)
+            await get_current_landlord(request=request, session=session)
 
         assert exc_info.value.status_code == status.HTTP_401_UNAUTHORIZED
 
@@ -225,10 +231,10 @@ class TestCurrentLandlordDependency:
     async def test_get_current_landlord_wrong_type(self, session, auth_landlord):
         """Test getting landlord with tenant type token."""
         token = create_access_token(data={"sub": auth_landlord.id, "type": "tenant"})
-        credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
+        request = _request_with_bearer(token)
 
         with pytest.raises(HTTPException) as exc_info:
-            await get_current_landlord(credentials=credentials, session=session)
+            await get_current_landlord(request=request, session=session)
 
         assert exc_info.value.status_code == status.HTTP_401_UNAUTHORIZED
 
@@ -236,10 +242,10 @@ class TestCurrentLandlordDependency:
     async def test_get_current_landlord_no_sub(self, session):
         """Test getting landlord with token missing sub claim."""
         token = create_access_token(data={"type": "landlord"})
-        credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
+        request = _request_with_bearer(token)
 
         with pytest.raises(HTTPException) as exc_info:
-            await get_current_landlord(credentials=credentials, session=session)
+            await get_current_landlord(request=request, session=session)
 
         assert exc_info.value.status_code == status.HTTP_401_UNAUTHORIZED
 
@@ -247,10 +253,10 @@ class TestCurrentLandlordDependency:
     async def test_get_current_landlord_nonexistent(self, session):
         """Test getting landlord with token for non-existent user."""
         token = create_access_token(data={"sub": "nonexistent-id", "type": "landlord"})
-        credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
+        request = _request_with_bearer(token)
 
         with pytest.raises(HTTPException) as exc_info:
-            await get_current_landlord(credentials=credentials, session=session)
+            await get_current_landlord(request=request, session=session)
 
         assert exc_info.value.status_code == status.HTTP_401_UNAUTHORIZED
 
@@ -258,9 +264,9 @@ class TestCurrentLandlordDependency:
     async def test_get_current_landlord_backwards_compat(self, session, auth_landlord):
         """Test getting landlord with token without type (backwards compatibility)."""
         token = create_access_token(data={"sub": auth_landlord.id})
-        credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
+        request = _request_with_bearer(token)
 
-        landlord = await get_current_landlord(credentials=credentials, session=session)
+        landlord = await get_current_landlord(request=request, session=session)
 
         assert landlord.id == auth_landlord.id
 
@@ -272,9 +278,9 @@ class TestCurrentTenantDependency:
     async def test_get_current_tenant_valid(self, session, auth_tenant):
         """Test getting current tenant with valid token."""
         token = create_access_token(data={"sub": auth_tenant.id, "type": "tenant"})
-        credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
+        request = _request_with_bearer(token)
 
-        tenant = await get_current_tenant(credentials=credentials, session=session)
+        tenant = await get_current_tenant(request=request, session=session)
 
         assert tenant.id == auth_tenant.id
         assert tenant.email == auth_tenant.email
@@ -282,12 +288,10 @@ class TestCurrentTenantDependency:
     @pytest.mark.asyncio
     async def test_get_current_tenant_invalid_token(self, session):
         """Test getting tenant with invalid token."""
-        credentials = HTTPAuthorizationCredentials(
-            scheme="Bearer", credentials="invalid.token.here"
-        )
+        request = _request_with_bearer("invalid.token.here")
 
         with pytest.raises(HTTPException) as exc_info:
-            await get_current_tenant(credentials=credentials, session=session)
+            await get_current_tenant(request=request, session=session)
 
         assert exc_info.value.status_code == status.HTTP_401_UNAUTHORIZED
 
@@ -295,10 +299,10 @@ class TestCurrentTenantDependency:
     async def test_get_current_tenant_wrong_type(self, session, auth_landlord):
         """Test getting tenant with landlord type token."""
         token = create_access_token(data={"sub": auth_landlord.id, "type": "landlord"})
-        credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
+        request = _request_with_bearer(token)
 
         with pytest.raises(HTTPException) as exc_info:
-            await get_current_tenant(credentials=credentials, session=session)
+            await get_current_tenant(request=request, session=session)
 
         assert exc_info.value.status_code == status.HTTP_401_UNAUTHORIZED
 
@@ -317,10 +321,10 @@ class TestCurrentTenantDependency:
         )
 
         token = create_access_token(data={"sub": tenant.id, "type": "tenant"})
-        credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
+        request = _request_with_bearer(token)
 
         with pytest.raises(HTTPException) as exc_info:
-            await get_current_tenant(credentials=credentials, session=session)
+            await get_current_tenant(request=request, session=session)
 
         assert exc_info.value.status_code == status.HTTP_403_FORBIDDEN
 
@@ -329,10 +333,10 @@ class TestCurrentTenantDependency:
         """Test getting tenant with token missing type (should fail)."""
         # Unlike landlord, tenant REQUIRES type="tenant"
         token = create_access_token(data={"sub": auth_tenant.id})
-        credentials = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
+        request = _request_with_bearer(token)
 
         with pytest.raises(HTTPException) as exc_info:
-            await get_current_tenant(credentials=credentials, session=session)
+            await get_current_tenant(request=request, session=session)
 
         assert exc_info.value.status_code == status.HTTP_401_UNAUTHORIZED
 

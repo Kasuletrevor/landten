@@ -9,8 +9,10 @@ __pycache__/
 backend/venv/
 
 # Environment files
+.env
 backend/.env
 frontend/.env.local
+secrets/
 
 # Database
 *.db
@@ -19,6 +21,7 @@ frontend/.env.local
 # IDE
 .idea/
 .vscode/
+.claude/
 *.swp
 *.swo
 

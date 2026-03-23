@@ -50,6 +50,15 @@ from app.schemas.notification import (
     SSEEvent,
 )
 from app.schemas.common import APIResponse, APIError
+from app.schemas.maintenance import (
+    MaintenanceRequestCreate,
+    MaintenanceRequestUpdate,
+    MaintenanceResolveRequest,
+    MaintenanceCommentCreate,
+    MaintenanceCommentResponse,
+    MaintenanceRequestResponse,
+    MaintenanceRequestListResponse,
+)
 
 __all__ = [
     # Landlord
@@ -95,6 +104,14 @@ __all__ = [
     "NotificationResponse",
     "NotificationListResponse",
     "SSEEvent",
+    # Maintenance
+    "MaintenanceRequestCreate",
+    "MaintenanceRequestUpdate",
+    "MaintenanceResolveRequest",
+    "MaintenanceCommentCreate",
+    "MaintenanceCommentResponse",
+    "MaintenanceRequestResponse",
+    "MaintenanceRequestListResponse",
     # Common
     "APIResponse",
     "APIError",

@@ -222,21 +222,22 @@ def test_property_empty_rooms(session, landlord_factory, property_factory):
 def test_property_room_deletion_behavior(
     session, landlord_factory, property_factory, room_factory
 ):
-    """Test room behavior when property is deleted."""
+    """Test property deletion is blocked when rooms still reference it."""
+    from sqlalchemy.exc import IntegrityError
+
     landlord = landlord_factory()
     prop = property_factory(landlord_id=landlord.id)
     room = room_factory(property_id=prop.id)
     room_id = room.id
 
-    # Delete property
-    session.delete(prop)
-    session.commit()
+    with pytest.raises(IntegrityError):
+        session.delete(prop)
+        session.commit()
+    session.rollback()
 
-    # Verify room still exists (no cascade delete in SQLite default)
+    # Room should still exist after failed delete.
     statement = select(Room).where(Room.id == room_id)
     result = session.exec(statement).first()
-
-    # Room remains but property_id becomes invalid reference
     assert result is not None
 
 
@@ -298,8 +299,19 @@ def test_property_timestamps(session, landlord_factory, property_factory):
     prop = property_factory(landlord_id=landlord.id)
     after_creation = datetime.now(timezone.utc)
 
-    assert before_creation <= prop.created_at <= after_creation
-    assert before_creation <= prop.updated_at <= after_creation
+    created_at = (
+        prop.created_at
+        if prop.created_at.tzinfo is not None
+        else prop.created_at.replace(tzinfo=timezone.utc)
+    )
+    updated_at = (
+        prop.updated_at
+        if prop.updated_at.tzinfo is not None
+        else prop.updated_at.replace(tzinfo=timezone.utc)
+    )
+
+    assert before_creation <= created_at <= after_creation
+    assert before_creation <= updated_at <= after_creation
 
 
 def test_property_update_timestamp(session, landlord_factory, property_factory):

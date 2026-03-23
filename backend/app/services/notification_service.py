@@ -4,6 +4,7 @@ In-app notification service using Server-Sent Events (SSE).
 
 import asyncio
 import json
+import logging
 from typing import Dict, Set, AsyncGenerator
 from datetime import datetime, timezone
 from sqlmodel import Session
@@ -11,9 +12,47 @@ from sqlmodel import Session
 from app.models.notification import Notification, NotificationType
 
 
-# Store active SSE connections per landlord
+# Store active SSE connections per landlord.
 # landlord_id -> set of async queues
 _connections: Dict[str, Set[asyncio.Queue]] = {}
+
+# Store active SSE connections per tenant.
+# tenant_id -> set of async queues
+_tenant_connections: Dict[str, Set[asyncio.Queue]] = {}
+
+logger = logging.getLogger(__name__)
+
+
+async def _subscribe(
+    owner_id: str, owner_connections: Dict[str, Set[asyncio.Queue]], role_label: str
+) -> AsyncGenerator[str, None]:
+    queue: asyncio.Queue = asyncio.Queue()
+
+    if owner_id not in owner_connections:
+        owner_connections[owner_id] = set()
+    owner_connections[owner_id].add(queue)
+
+    try:
+        yield format_sse_event(
+            "connected",
+            {
+                "message": "Connected to notification stream",
+                "role": role_label,
+            },
+        )
+
+        while True:
+            try:
+                event = await asyncio.wait_for(queue.get(), timeout=30.0)
+                yield event
+            except asyncio.TimeoutError:
+                yield format_sse_event(
+                    "ping", {"timestamp": datetime.now(timezone.utc).isoformat()}
+                )
+    finally:
+        owner_connections[owner_id].discard(queue)
+        if not owner_connections[owner_id]:
+            del owner_connections[owner_id]
 
 
 async def subscribe(landlord_id: str) -> AsyncGenerator[str, None]:
@@ -21,35 +60,43 @@ async def subscribe(landlord_id: str) -> AsyncGenerator[str, None]:
     Subscribe to notifications for a landlord.
     Yields SSE-formatted events.
     """
-    queue: asyncio.Queue = asyncio.Queue()
+    async for event in _subscribe(landlord_id, _connections, "landlord"):
+        yield event
 
-    # Register this connection
-    if landlord_id not in _connections:
-        _connections[landlord_id] = set()
-    _connections[landlord_id].add(queue)
 
-    try:
-        # Send initial connection event
-        yield format_sse_event(
-            "connected", {"message": "Connected to notification stream"}
-        )
+async def subscribe_tenant(tenant_id: str) -> AsyncGenerator[str, None]:
+    """
+    Subscribe to notifications for a tenant.
+    Yields SSE-formatted events.
+    """
+    async for event in _subscribe(tenant_id, _tenant_connections, "tenant"):
+        yield event
 
-        # Keep connection alive and yield events
-        while True:
-            try:
-                # Wait for events with timeout (for keep-alive)
-                event = await asyncio.wait_for(queue.get(), timeout=30.0)
-                yield event
-            except asyncio.TimeoutError:
-                # Send keep-alive ping
-                yield format_sse_event(
-                    "ping", {"timestamp": datetime.now(timezone.utc).isoformat()}
-                )
-    finally:
-        # Cleanup on disconnect
-        _connections[landlord_id].discard(queue)
-        if not _connections[landlord_id]:
-            del _connections[landlord_id]
+
+async def _broadcast(
+    owner_id: str,
+    owner_connections: Dict[str, Set[asyncio.Queue]],
+    event_type: str,
+    data: dict,
+    role_label: str,
+) -> None:
+    if owner_id not in owner_connections:
+        return
+
+    event = format_sse_event(event_type, data)
+
+    for queue in tuple(owner_connections[owner_id]):
+        try:
+            await queue.put(event)
+        except Exception:
+            logger.exception(
+                "Failed to broadcast SSE event",
+                extra={
+                    "owner_id": owner_id,
+                    "event_type": event_type,
+                    "role": role_label,
+                },
+            )
 
 
 def format_sse_event(event_type: str, data: dict) -> str:
@@ -61,17 +108,20 @@ async def broadcast_to_landlord(landlord_id: str, event_type: str, data: dict):
     """
     Broadcast an event to all connections for a landlord.
     """
-    if landlord_id not in _connections:
-        return
+    await _broadcast(landlord_id, _connections, event_type, data, "landlord")
 
-    event = format_sse_event(event_type, data)
 
-    # Send to all connected clients
-    for queue in _connections[landlord_id]:
-        try:
-            await queue.put(event)
-        except Exception:
-            pass  # Ignore failed sends
+async def broadcast_to_tenant(tenant_id: str, event_type: str, data: dict):
+    """
+    Broadcast an event to all connections for a tenant.
+    """
+    await _broadcast(
+        tenant_id,
+        _tenant_connections,
+        event_type,
+        data,
+        "tenant",
+    )
 
 
 async def notify_payment_due(
@@ -217,6 +267,7 @@ async def notify_reminder_sent(
     method: str,  # "email", "sms", or "both"
     payment_id: str,
     session: Session,
+    created_at: datetime | None = None,
 ):
     """
     Send a notification that a reminder was sent.
@@ -227,6 +278,7 @@ async def notify_reminder_sent(
         title="Reminder Sent",
         message=f"Payment reminder sent to {tenant_name} via {method}",
         payment_id=payment_id,
+        created_at=created_at or datetime.now(timezone.utc),
     )
     session.add(notification)
     session.commit()
@@ -249,3 +301,10 @@ def get_active_connections_count(landlord_id: str) -> int:
     if landlord_id not in _connections:
         return 0
     return len(_connections[landlord_id])
+
+
+def get_active_tenant_connections_count(tenant_id: str) -> int:
+    """Get the number of active SSE connections for a tenant."""
+    if tenant_id not in _tenant_connections:
+        return 0
+    return len(_tenant_connections[tenant_id])

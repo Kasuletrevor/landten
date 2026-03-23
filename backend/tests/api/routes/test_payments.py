@@ -6,6 +6,7 @@ Tests all payment endpoints including file uploads, status transitions, and acce
 import pytest
 import os
 from datetime import date, timedelta
+from unittest.mock import AsyncMock, patch
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
@@ -260,6 +261,102 @@ def test_payment_status_transition_pending_to_verifying(
     assert response.status_code == 200
     data = response.json()
     assert data["status"].lower() == "verifying"
+
+
+def test_reject_receipt_notifies_tenant_and_sends_email(
+    client: TestClient,
+    session: Session,
+    auth_landlord: Landlord,
+    auth_headers: dict,
+):
+    """Rejecting a receipt should notify the tenant and retain the rejection reason."""
+    prop = PropertyFactory.create(session=session, landlord_id=auth_landlord.id)
+    room = RoomFactory.create(session=session, property_id=prop.id, currency="UGX")
+    tenant = TenantFactory.create(session=session, room_id=room.id, email="tenant@test.com")
+    schedule = PaymentScheduleFactory.create(session=session, tenant_id=tenant.id)
+    payment = PaymentFactory.create(
+        session=session,
+        tenant_id=tenant.id,
+        schedule_id=schedule.id,
+        status=PaymentStatus.VERIFYING,
+        due_date=date.today(),
+        window_end_date=date.today() + timedelta(days=5),
+        receipt_url="/uploads/receipts/test.png",
+    )
+
+    with (
+        patch(
+            "app.routers.payments.notification_service.broadcast_to_tenant",
+            new=AsyncMock(),
+        ) as broadcast_mock,
+        patch(
+            "app.routers.payments.email_service.send_receipt_rejected",
+            new=AsyncMock(return_value=True),
+        ) as email_mock,
+    ):
+        response = client.put(
+            f"/api/payments/{payment.id}/reject-receipt",
+            headers=auth_headers,
+            json={"reason": "Amount on the receipt does not match the expected rent."},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "pending"
+    assert payload["rejection_reason"] == "Amount on the receipt does not match the expected rent."
+
+    broadcast_mock.assert_awaited_once()
+    event_payload = broadcast_mock.await_args.args[2]
+    assert event_payload["title"] == "Payment receipt rejected"
+    assert event_payload["rejection_reason"] == "Amount on the receipt does not match the expected rent."
+
+    email_mock.assert_awaited_once()
+    email_kwargs = email_mock.await_args.kwargs
+    assert email_kwargs["tenant_email"] == "tenant@test.com"
+    assert email_kwargs["currency"] == "UGX"
+    assert email_kwargs["property_name"] == prop.name
+    assert email_kwargs["room_name"] == room.name
+
+
+def test_reject_receipt_returns_200_when_post_commit_notifications_fail(
+    client: TestClient,
+    session: Session,
+    auth_landlord: Landlord,
+    auth_headers: dict,
+):
+    """Saved rejection state should survive downstream email/SSE failures."""
+    prop = PropertyFactory.create(session=session, landlord_id=auth_landlord.id)
+    room = RoomFactory.create(session=session, property_id=prop.id)
+    tenant = TenantFactory.create(session=session, room_id=room.id, email="tenant@test.com")
+    schedule = PaymentScheduleFactory.create(session=session, tenant_id=tenant.id)
+    payment = PaymentFactory.create(
+        session=session,
+        tenant_id=tenant.id,
+        schedule_id=schedule.id,
+        status=PaymentStatus.VERIFYING,
+        due_date=date.today(),
+        window_end_date=date.today() + timedelta(days=5),
+        receipt_url="/uploads/receipts/test.png",
+    )
+
+    with (
+        patch(
+            "app.routers.payments.notification_service.broadcast_to_tenant",
+            new=AsyncMock(side_effect=RuntimeError("sse down")),
+        ),
+        patch(
+            "app.routers.payments.email_service.send_receipt_rejected",
+            new=AsyncMock(side_effect=RuntimeError("smtp down")),
+        ),
+    ):
+        response = client.put(
+            f"/api/payments/{payment.id}/reject-receipt",
+            headers=auth_headers,
+            json={"reason": "Receipt is unreadable."},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["rejection_reason"] == "Receipt is unreadable."
 
 
 # =============================================================================

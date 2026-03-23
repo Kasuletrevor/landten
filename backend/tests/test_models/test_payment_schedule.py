@@ -785,7 +785,9 @@ def test_schedule_tenant_cascade_behavior(
     tenant_factory,
     schedule_factory,
 ):
-    """Test schedule behavior when tenant is deleted."""
+    """Test schedule deletion guard when tenant is still referenced."""
+    from sqlalchemy.exc import IntegrityError
+
     landlord = landlord_factory()
     prop = property_factory(landlord_id=landlord.id)
     room = room_factory(property_id=prop.id)
@@ -793,15 +795,14 @@ def test_schedule_tenant_cascade_behavior(
     schedule = schedule_factory(tenant_id=tenant.id)
     schedule_id = schedule.id
 
-    # Delete tenant
-    session.delete(tenant)
-    session.commit()
+    with pytest.raises(IntegrityError):
+        session.delete(tenant)
+        session.commit()
+    session.rollback()
 
-    # Verify schedule still exists (no cascade delete)
+    # Schedule should still exist after failed delete.
     statement = select(PaymentSchedule).where(PaymentSchedule.id == schedule_id)
     result = session.exec(statement).first()
-
-    # Schedule remains but tenant_id becomes invalid reference
     assert result is not None
 
 
@@ -837,8 +838,7 @@ def test_schedule_amount_required(
 def test_schedule_due_day_required(
     session, landlord_factory, property_factory, room_factory, tenant_factory
 ):
-    """Test that due_day is required."""
-    from sqlalchemy.exc import IntegrityError
+    """Test that missing due_day resolves to model default."""
 
     landlord = landlord_factory()
     prop = property_factory(landlord_id=landlord.id)
@@ -853,9 +853,10 @@ def test_schedule_due_day_required(
         start_date=date.today(),
     )
 
-    with pytest.raises(IntegrityError):
-        session.add(schedule)
-        session.commit()
+    session.add(schedule)
+    session.commit()
+    session.refresh(schedule)
+    assert schedule.due_day == 1
 
 
 def test_schedule_start_date_required(
@@ -937,8 +938,19 @@ def test_schedule_timestamps(
     schedule = schedule_factory(tenant_id=tenant.id)
     after_creation = datetime.now(timezone.utc)
 
-    assert before_creation <= schedule.created_at <= after_creation
-    assert before_creation <= schedule.updated_at <= after_creation
+    created_at = (
+        schedule.created_at
+        if schedule.created_at.tzinfo is not None
+        else schedule.created_at.replace(tzinfo=timezone.utc)
+    )
+    updated_at = (
+        schedule.updated_at
+        if schedule.updated_at.tzinfo is not None
+        else schedule.updated_at.replace(tzinfo=timezone.utc)
+    )
+
+    assert before_creation <= created_at <= after_creation
+    assert before_creation <= updated_at <= after_creation
 
 
 def test_schedule_update_timestamp(

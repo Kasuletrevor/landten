@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
 from sqlmodel import Session, select
 from datetime import timedelta
 
@@ -8,6 +8,7 @@ from app.core.security import (
     verify_password,
     create_access_token,
     get_current_landlord,
+    AUTH_COOKIE_NAME,
 )
 from app.core.config import settings
 from app.core.rate_limit import limiter, AUTH_RATE_LIMIT
@@ -23,11 +24,35 @@ from app.schemas.landlord import (
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
+def _set_auth_cookie(response: Response, access_token: str) -> None:
+    response.set_cookie(
+        key=AUTH_COOKIE_NAME,
+        value=access_token,
+        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        httponly=True,
+        secure=settings.FRONTEND_URL.startswith("https://"),
+        samesite="lax",
+        path="/",
+    )
+
+
+def _clear_auth_cookie(response: Response) -> None:
+    response.delete_cookie(
+        key=AUTH_COOKIE_NAME,
+        path="/",
+        secure=settings.FRONTEND_URL.startswith("https://"),
+        httponly=True,
+        samesite="lax",
+    )
+
+
 @router.post(
     "/register", response_model=LoginResponse, status_code=status.HTTP_201_CREATED
 )
 async def register(
-    landlord_data: LandlordCreate, session: Session = Depends(get_session)
+    landlord_data: LandlordCreate,
+    response: Response,
+    session: Session = Depends(get_session),
 ):
     """
     Register a new landlord account.
@@ -57,6 +82,7 @@ async def register(
         data={"sub": landlord.id},
         expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
     )
+    _set_auth_cookie(response, access_token)
 
     return LoginResponse(
         access_token=access_token,
@@ -70,6 +96,7 @@ async def register(
 async def login(
     request: Request,
     credentials: LandlordLogin,
+    response: Response,
     session: Session = Depends(get_session),
 ):
     """
@@ -93,6 +120,7 @@ async def login(
         data={"sub": landlord.id},
         expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
     )
+    _set_auth_cookie(response, access_token)
 
     return LoginResponse(
         access_token=access_token,
@@ -128,3 +156,16 @@ async def update_me(
     session.refresh(current_landlord)
 
     return LandlordResponse.model_validate(current_landlord)
+
+
+@router.post("/logout")
+async def logout(
+    response: Response,
+    current_landlord: Landlord = Depends(get_current_landlord),
+):
+    """
+    Logout current landlord by clearing auth cookie.
+    """
+    _ = current_landlord
+    _clear_auth_cookie(response)
+    return {"message": "Logged out"}

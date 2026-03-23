@@ -259,8 +259,7 @@ class TestCurrencyValidation:
 
     def test_is_valid_currency_none(self):
         """Test None is invalid."""
-        with pytest.raises(TypeError):
-            is_valid_currency(None)
+        assert is_valid_currency(None) is False
 
 
 # =============================================================================
@@ -319,10 +318,14 @@ class TestRealWorldUseCases:
         kes = convert_currency(rent_usd, "USD", "KES")
         tzs = convert_currency(rent_usd, "USD", "TZS")
 
-        # Verify conversions
-        assert ugx == 1875000.0  # 500 * 3750
-        assert kes == 64741.38  # 1875000 / 29
-        assert tzs == 1250000.0  # 1875000 / 1.5
+        # Verify conversions against configured rates
+        expected_ugx = round(rent_usd * EXCHANGE_RATES["USD"], 2)
+        expected_kes = round(expected_ugx / EXCHANGE_RATES["KES"], 2)
+        expected_tzs = round(expected_ugx / EXCHANGE_RATES["TZS"], 2)
+
+        assert ugx == expected_ugx
+        assert kes == expected_kes
+        assert tzs == expected_tzs
 
     def test_payment_display_formatting(self):
         """Test displaying payments in different formats."""

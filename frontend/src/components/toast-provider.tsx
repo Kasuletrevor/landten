@@ -33,7 +33,7 @@ export function useToast() {
 
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, userType } = useAuth();
 
   const addToast = useCallback((toast: Omit<Toast, "id">) => {
     const id = Math.random().toString(36).substring(2, 9);
@@ -77,6 +77,50 @@ export function ToastProvider({ children }: { children: ReactNode }) {
             message: `Payment from ${event.data.tenant_name || "a tenant"} has been recorded.`,
           });
           break;
+        case "payment_dispute_message":
+          addToast({
+            type: "info",
+            title:
+              userType === "tenant"
+                ? "Landlord replied on payment discussion"
+                : "Tenant replied on payment discussion",
+            message: (event.data.message as string) || "New message in a payment dispute thread.",
+          });
+          break;
+        case "payment_receipt_rejected":
+          addToast({
+            type: "error",
+            title: "Payment receipt rejected",
+            message:
+              (event.data.rejection_reason as string) ||
+              (event.data.message as string) ||
+              "Your landlord rejected the uploaded receipt.",
+          });
+          break;
+        case "maintenance_request_created":
+          addToast({
+            type: "info",
+            title: (event.data.title as string) || "New maintenance request",
+            message:
+              (event.data.message as string) || "A new maintenance request was submitted.",
+          });
+          break;
+        case "maintenance_request_updated":
+          addToast({
+            type: "warning",
+            title: (event.data.title as string) || "Maintenance request updated",
+            message:
+              (event.data.message as string) || "A maintenance request has changed status.",
+          });
+          break;
+        case "maintenance_comment_created":
+          addToast({
+            type: "info",
+            title: (event.data.title as string) || "Maintenance request comment",
+            message:
+              (event.data.message as string) || "There is a new maintenance request comment.",
+          });
+          break;
         default:
           // Handle generic messages
           if (event.data.title && event.data.message) {
@@ -89,9 +133,12 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       }
     };
 
-    const unsubscribe = api.subscribeToNotifications(handleSSEEvent);
+    const unsubscribe =
+      userType === "tenant"
+        ? api.subscribeToTenantNotifications(handleSSEEvent)
+        : api.subscribeToNotifications(handleSSEEvent);
     return () => unsubscribe();
-  }, [isAuthenticated, addToast]);
+  }, [isAuthenticated, userType, addToast]);
 
   return (
     <ToastContext.Provider value={{ toasts, addToast, removeToast }}>
