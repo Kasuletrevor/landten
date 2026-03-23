@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Bell, Check, CheckCheck, X, ChevronRight, Loader2 } from "lucide-react";
+import { Bell, Check, CheckCheck, ChevronRight, Loader2 } from "lucide-react";
 import api, { NotificationItem } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import Link from "next/link";

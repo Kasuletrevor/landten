@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import api, {
   LeaseAgreementWithTenant,
   LeaseStatusSummary,
@@ -35,11 +35,7 @@ export default function LeasesPage() {
   const [uploadSigned, setUploadSigned] = useState<LeaseAgreementWithTenant | null>(null);
   const [deleteLease, setDeleteLease] = useState<LeaseAgreementWithTenant | null>(null);
 
-  useEffect(() => {
-    loadData();
-  }, [filterProperty, filterStatus]);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       const [leasesRes, summaryRes, propertiesRes, tenantsRes] = await Promise.all([
         api.getLeases({
@@ -59,7 +55,11 @@ export default function LeasesPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [filterProperty, filterStatus]);
+
+  useEffect(() => {
+    void loadData();
+  }, [loadData]);
 
   const filteredLeases = leases.filter(
     (lease) =>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import api, {
   PaymentWithTenant,
   PaymentSummary,
@@ -47,11 +47,7 @@ export default function PaymentsPage() {
   const [disputePayment, setDisputePayment] = useState<PaymentWithTenant | null>(null);
   const [exportModalOpen, setExportModalOpen] = useState(false);
 
-  useEffect(() => {
-    loadData();
-  }, [filterProperty, filterStatus, dateRange]);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       const [paymentsRes, summaryRes, propertiesRes] = await Promise.all([
         api.getPayments({
@@ -71,7 +67,11 @@ export default function PaymentsPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [dateRange, filterProperty, filterStatus]);
+
+  useEffect(() => {
+    void loadData();
+  }, [loadData]);
 
   const filteredPayments = payments.filter(
     (payment) =>

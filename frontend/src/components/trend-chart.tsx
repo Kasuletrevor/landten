@@ -130,10 +130,6 @@ export default function TrendChart({ data, currency }: TrendChartProps) {
     monthLabel: formatMonth(item.month),
   }));
 
-  // Get the primary color for the chart bars
-  const barColor = "var(--primary-500)";
-  const barColorHover = "var(--primary-600)";
-
   return (
     <div style={{ width: "100%", height: 240 }}>
       <ResponsiveContainer>

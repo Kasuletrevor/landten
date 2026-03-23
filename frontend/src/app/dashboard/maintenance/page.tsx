@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import api, {
   MaintenanceRequest,
   MaintenanceStatusValue,
@@ -54,7 +54,7 @@ export default function MaintenancePage() {
   const [commentInternal, setCommentInternal] = useState(false);
   const [commentFile, setCommentFile] = useState<File | null>(null);
 
-  const loadRequests = async () => {
+  const loadRequests = useCallback(async () => {
     try {
       setError("");
       const res = await api.getMaintenanceRequests({
@@ -68,11 +68,11 @@ export default function MaintenancePage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [statusFilter, urgencyFilter, search]);
 
   useEffect(() => {
     void loadRequests();
-  }, [statusFilter, urgencyFilter]);
+  }, [loadRequests]);
 
   const refreshDetail = async (requestId: string) => {
     const item = await api.getMaintenanceRequest(requestId);

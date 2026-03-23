@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import api, { Payment, TenantPortalResponse, PaymentStatus, PaymentDispute, LeaseAgreement } from "@/lib/api";
@@ -42,11 +42,7 @@ export default function TenantDashboardPage() {
 
   const normalizeStatus = (status: PaymentStatus) => String(status).toUpperCase();
 
-  useEffect(() => {
-    loadData();
-  }, [router]);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       const [profile, paymentsData] = await Promise.all([
         api.getTenantMe(),
@@ -62,7 +58,11 @@ export default function TenantDashboardPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [router]);
+
+  useEffect(() => {
+    void loadData();
+  }, [loadData]);
 
   const handleLogout = async () => {
     await api.tenantLogout().catch(() => {});
@@ -385,7 +385,7 @@ function LeaseSection() {
     try {
       const leaseData = await api.getMyLease();
       setLease(leaseData);
-    } catch (err) {
+    } catch {
       // No lease found is okay
       setLease(null);
     } finally {
@@ -404,7 +404,7 @@ function LeaseSection() {
       a.click();
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
-    } catch (err) {
+    } catch {
       setError("Failed to download lease");
     }
   };
