@@ -2,17 +2,14 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 from jose import JWTError, jwt
 import bcrypt
-from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from sqlmodel import Session, select
+from fastapi import Depends, HTTPException, status, Request
+from sqlmodel import Session
 
 from app.core.config import settings
 from app.core.database import get_session
 from app.models.landlord import Landlord
 from app.models.tenant import Tenant
-
-# JWT Bearer token security
-security = HTTPBearer()
+AUTH_COOKIE_NAME = "landten_access_token"
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -54,8 +51,23 @@ def decode_token(token: str) -> Optional[dict]:
         return None
 
 
+def get_token_from_request(request: Request) -> Optional[str]:
+    """
+    Extract auth token from Authorization header first, then HttpOnly cookie.
+    """
+    auth_header = request.headers.get("authorization")
+    if auth_header and auth_header.lower().startswith("bearer "):
+        return auth_header.split(" ", 1)[1]
+
+    cookie_token = request.cookies.get(AUTH_COOKIE_NAME)
+    if cookie_token:
+        return cookie_token
+
+    return None
+
+
 async def get_current_landlord(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    request: Request,
     session: Session = Depends(get_session),
 ) -> Landlord:
     """
@@ -68,7 +80,9 @@ async def get_current_landlord(
         headers={"WWW-Authenticate": "Bearer"},
     )
 
-    token = credentials.credentials
+    token = get_token_from_request(request)
+    if not token:
+        raise credentials_exception
     payload = decode_token(token)
 
     if payload is None:
@@ -92,7 +106,7 @@ async def get_current_landlord(
 
 
 async def get_current_tenant(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    request: Request,
     session: Session = Depends(get_session),
 ) -> Tenant:
     """
@@ -105,7 +119,9 @@ async def get_current_tenant(
         headers={"WWW-Authenticate": "Bearer"},
     )
 
-    token = credentials.credentials
+    token = get_token_from_request(request)
+    if not token:
+        raise credentials_exception
     payload = decode_token(token)
 
     if payload is None:

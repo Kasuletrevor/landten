@@ -7,7 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session, select
 
-from app.core.security import verify_password
+from app.core.security import AUTH_COOKIE_NAME, verify_password
 
 
 # =============================================================================
@@ -139,6 +139,7 @@ def test_login_success(client: TestClient, auth_landlord, test_password: str):
     assert data["token_type"] == "bearer"
     assert "landlord" in data
     assert data["landlord"]["email"] == auth_landlord.email
+    assert AUTH_COOKIE_NAME in response.cookies
 
 
 def test_login_invalid_password(client: TestClient, auth_landlord):
@@ -200,6 +201,18 @@ def test_login_after_register(client: TestClient, session: Session):
     data = login_response.json()
     assert "access_token" in data
     assert data["landlord"]["email"] == "flow@landlord.com"
+
+
+def test_cookie_auth_can_access_profile(client: TestClient, auth_landlord, test_password: str):
+    """Login cookie should authorize /auth/me without Authorization header."""
+    login_data = {"email": auth_landlord.email, "password": test_password}
+    login_response = client.post("/api/auth/login", json=login_data)
+    assert login_response.status_code == 200
+    assert AUTH_COOKIE_NAME in login_response.cookies
+
+    profile_response = client.get("/api/auth/me")
+    assert profile_response.status_code == 200
+    assert profile_response.json()["email"] == auth_landlord.email
 
 
 # =============================================================================
@@ -279,6 +292,17 @@ def test_update_profile_unauthorized(client: TestClient):
     response = client.put("/api/auth/me", json=update_data)
 
     assert response.status_code in [401, 403]
+
+
+def test_logout_clears_auth_cookie(client: TestClient, auth_headers: dict):
+    """Test logout clears the auth cookie."""
+    client.cookies.set(AUTH_COOKIE_NAME, "test-cookie")
+    response = client.post("/api/auth/logout", headers=auth_headers)
+    assert response.status_code == 200
+    assert response.json()["message"] == "Logged out"
+    set_cookie_header = response.headers.get("set-cookie", "")
+    assert AUTH_COOKIE_NAME in set_cookie_header
+    assert "Max-Age=0" in set_cookie_header
 
 
 def test_update_profile_invalid_data(
