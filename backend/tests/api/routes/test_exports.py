@@ -6,6 +6,9 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 from datetime import date, timedelta
+from io import BytesIO
+
+from openpyxl import load_workbook
 
 from app.models.payment import Payment, PaymentStatus
 from app.models.payment_schedule import PaymentSchedule, PaymentFrequency
@@ -178,6 +181,16 @@ class TestPaymentExport:
         )
 
         assert response.status_code == 200
+        workbook = load_workbook(BytesIO(response.content))
+        worksheet = workbook.active
+        matching_rows = [
+            row
+            for row in worksheet.iter_rows(min_row=1, values_only=True)
+            if row[0] == tenant.name
+        ]
+        assert len(matching_rows) == 1
+        assert matching_rows[0][11] == PaymentStatus.ON_TIME.value
+        workbook.close()
 
     def test_export_multiple_statuses(
         self, client: TestClient, session: Session, auth_headers: dict
@@ -371,9 +384,6 @@ class TestPaymentExport:
         assert response.status_code == 200
 
         # Verify we can open the Excel file
-        from openpyxl import load_workbook
-        from io import BytesIO
-
         wb = load_workbook(BytesIO(response.content))
         ws = wb.active
 
@@ -428,3 +438,72 @@ class TestPaymentExport:
 
         # Verify it's a valid PDF by checking header
         assert response.content[:4] == b"%PDF"
+
+    def test_export_summary_groups_multi_currency_totals(
+        self, client: TestClient, session: Session
+    ):
+        landlord = LandlordFactory.create(session=session)
+        property_obj = PropertyFactory.create(session=session, landlord_id=landlord.id)
+        ugx_room = RoomFactory.create(
+            session=session,
+            property_id=property_obj.id,
+            name="UGX Room",
+            currency="UGX",
+        )
+        usd_room = RoomFactory.create(
+            session=session,
+            property_id=property_obj.id,
+            name="USD Room",
+            currency="USD",
+        )
+        ugx_tenant = TenantFactory.create(
+            session=session,
+            room_id=ugx_room.id,
+            name="UGX Tenant",
+        )
+        usd_tenant = TenantFactory.create(
+            session=session,
+            room_id=usd_room.id,
+            name="USD Tenant",
+        )
+
+        PaymentFactory.create(
+            session=session,
+            tenant_id=ugx_tenant.id,
+            amount_due=150000,
+            status=PaymentStatus.PENDING,
+            period_start=date(2024, 1, 1),
+            period_end=date(2024, 1, 31),
+        )
+        PaymentFactory.create(
+            session=session,
+            tenant_id=usd_tenant.id,
+            amount_due=700,
+            status=PaymentStatus.PENDING,
+            period_start=date(2024, 1, 1),
+            period_end=date(2024, 1, 31),
+        )
+
+        from app.core.security import create_access_token
+
+        token = create_access_token(data={"sub": landlord.id, "type": "landlord"})
+        headers = {"Authorization": f"Bearer {token}"}
+
+        response = client.get(
+            "/api/payments/export?format=excel&start_date=2024-01-01&end_date=2024-12-31",
+            headers=headers,
+        )
+
+        assert response.status_code == 200
+        workbook = load_workbook(BytesIO(response.content))
+        worksheet = workbook.active
+        summary_rows = {
+            row[0]: row[1]
+            for row in worksheet.iter_rows(min_row=1, max_row=20, values_only=True)
+            if row[0]
+        }
+        assert summary_rows["Total Expected (UGX)"] == "UGX 150,000.00"
+        assert summary_rows["Total Expected (USD)"] == "USD 700.00"
+        assert summary_rows["Total Outstanding (UGX)"] == "UGX 150,000.00"
+        assert summary_rows["Total Outstanding (USD)"] == "USD 700.00"
+        workbook.close()

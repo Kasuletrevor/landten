@@ -4,7 +4,7 @@ Main FastAPI application entry point.
 """
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -159,6 +159,17 @@ app.include_router(maintenance.router, prefix="/api")
 app.include_router(notifications.router, prefix="/api")
 app.include_router(analytics.router, prefix="/api")
 app.include_router(leases.router, prefix="/api")
+
+
+@app.get("/uploads/maintenance/{filename:path}")
+async def block_public_maintenance_uploads(filename: str):
+    """Maintenance attachments must be served via authenticated routes."""
+    _ = filename
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Maintenance attachment not found",
+    )
+
 
 # Mount static files for uploads
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")

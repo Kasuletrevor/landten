@@ -55,6 +55,7 @@ from app.services.payment_dispute_service import (
 from app.services.maintenance_service import (
     assert_valid_status_transition,
     build_maintenance_response,
+    build_maintenance_attachment_url,
     create_maintenance_comment,
     get_request_for_tenant,
     save_maintenance_attachment,
@@ -721,7 +722,7 @@ async def add_tenant_maintenance_comment(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Comment body is required"
         )
 
-    _ = create_maintenance_comment(
+    comment = create_maintenance_comment(
         session,
         maintenance_request=maintenance_request,
         author_type=MaintenanceAuthorType.TENANT,
@@ -794,7 +795,7 @@ async def add_tenant_maintenance_attachment_comment(
     )
     message_body = (body or "").strip() or f"Attachment shared: {attachment_name}"
 
-    _ = create_maintenance_comment(
+    comment = create_maintenance_comment(
         session,
         maintenance_request=maintenance_request,
         author_type=MaintenanceAuthorType.TENANT,
@@ -805,6 +806,11 @@ async def add_tenant_maintenance_attachment_comment(
         attachment_url=attachment_url,
         attachment_content_type=content_type,
         attachment_size_bytes=size_bytes,
+    )
+    secure_attachment_url = build_maintenance_attachment_url(
+        maintenance_request.id,
+        comment.id,
+        attachment_url,
     )
 
     await _run_post_commit_task(
@@ -820,7 +826,7 @@ async def add_tenant_maintenance_attachment_comment(
                 "request_title": maintenance_request.title,
                 "tenant_name": current_tenant.name,
                 "property_name": property_obj.name,
-                "attachment_url": attachment_url,
+                "attachment_url": secure_attachment_url,
             },
         ),
         request_id=maintenance_request.id,

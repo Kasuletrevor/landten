@@ -140,6 +140,15 @@ def build_maintenance_response(
         else []
     )
     comments_count = len(comments)
+    comment_responses: list[MaintenanceCommentResponse] = []
+    for comment in comments:
+        comment_response = MaintenanceCommentResponse.model_validate(comment)
+        comment_response.attachment_url = build_maintenance_attachment_url(
+            maintenance_request.id,
+            comment.id,
+            comment.attachment_url,
+        )
+        comment_responses.append(comment_response)
 
     return MaintenanceRequestResponse(
         id=maintenance_request.id,
@@ -168,8 +177,18 @@ def build_maintenance_response(
         property_name=property_obj.name if property_obj else None,
         room_name=room.name if room else None,
         comments_count=comments_count,
-        comments=[MaintenanceCommentResponse.model_validate(c) for c in comments],
+        comments=comment_responses,
     )
+
+
+def build_maintenance_attachment_url(
+    request_id: str,
+    comment_id: str,
+    attachment_url: Optional[str],
+) -> Optional[str]:
+    if not attachment_url:
+        return None
+    return f"/api/maintenance/{request_id}/comments/{comment_id}/attachment"
 
 
 async def save_maintenance_attachment(
@@ -207,6 +226,30 @@ async def save_maintenance_attachment(
         content_type,
         size_bytes,
     )
+
+
+def resolve_maintenance_attachment_file_path(attachment_url: str) -> str:
+    if not attachment_url.startswith("/uploads/maintenance/"):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Attachment not found",
+        )
+
+    filename = os.path.basename(attachment_url)
+    if not filename:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Attachment not found",
+        )
+
+    file_path = os.path.normpath(os.path.join(_MAINTENANCE_UPLOADS_DIR, filename))
+    if os.path.commonpath([_MAINTENANCE_UPLOADS_DIR, file_path]) != _MAINTENANCE_UPLOADS_DIR:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Attachment not found",
+        )
+
+    return file_path
 
 
 def assert_valid_status_transition(

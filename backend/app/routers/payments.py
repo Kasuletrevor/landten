@@ -68,6 +68,32 @@ async def _run_post_commit_task(
         logger.exception("Post-commit payment task failed", extra={"task_name": task_name, **context})
 
 
+def _parse_payment_status_filters(raw_statuses: str) -> list[PaymentStatus]:
+    parsed_statuses: list[PaymentStatus] = []
+    for raw_status in raw_statuses.split(","):
+        normalized = raw_status.strip().upper()
+        if not normalized:
+            continue
+
+        status_value = PaymentStatus.__members__.get(normalized)
+        if status_value is not None:
+            parsed_statuses.append(status_value)
+            continue
+
+        status_value = next(
+            (item for item in PaymentStatus if item.value.upper() == normalized),
+            None,
+        )
+        if status_value is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid payment status: {raw_status.strip()}",
+            )
+        parsed_statuses.append(status_value)
+
+    return parsed_statuses
+
+
 def _resolve_receipt_file_path(receipt_url: str) -> str:
     """Resolve a receipt_url to a safe local file path."""
     # We only support serving receipts from our mounted uploads path.
@@ -484,7 +510,9 @@ async def export_payments(
     property_id: Optional[str] = Query(None, description="Filter by property ID"),
     tenant_id: Optional[str] = Query(None, description="Filter by tenant ID"),
     status_filter: Optional[str] = Query(
-        None, description="Filter by status (comma-separated for multiple)"
+        None,
+        alias="status",
+        description="Filter by status (comma-separated for multiple)",
     ),
     current_landlord: Landlord = Depends(get_current_landlord),
     session: Session = Depends(get_session),
@@ -497,7 +525,7 @@ async def export_payments(
     - **end_date**: Filter payments until this date (inclusive). Default: Dec 31 of current year
     - **property_id**: Filter by specific property
     - **tenant_id**: Filter by specific tenant
-    - **status_filter**: Filter by payment status (comma-separated for multiple)
+    - **status**: Filter by payment status (comma-separated for multiple)
 
     Date range cannot exceed 2 years. Returns a file download.
     """
@@ -562,8 +590,8 @@ async def export_payments(
 
     # Apply status filter (if provided)
     if status_filter:
-        status_list = [s.strip().upper() for s in status_filter.split(",")]
-        payments = [p for p in payments if p.status.value in status_list]
+        allowed_statuses = set(_parse_payment_status_filters(status_filter))
+        payments = [p for p in payments if p.status in allowed_statuses]
 
     # Generate export
     filename_base = (
@@ -572,6 +600,7 @@ async def export_payments(
 
     if format == ExportFormat.EXCEL:
         buffer = ExportService.generate_excel(
+            session=session,
             payments=payments,
             start_date=start_date,
             end_date=end_date,
@@ -581,6 +610,7 @@ async def export_payments(
         media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     else:  # PDF
         buffer = ExportService.generate_pdf(
+            session=session,
             payments=payments,
             start_date=start_date,
             end_date=end_date,

@@ -1,9 +1,10 @@
 from fastapi.testclient import TestClient
-from sqlmodel import Session
+from sqlmodel import Session, select
 from unittest.mock import AsyncMock, patch
 
 from app.core.security import create_access_token
 from app.models.landlord import Landlord
+from app.models.maintenance import MaintenanceComment
 from tests.factories import PropertyFactory, RoomFactory, TenantFactory
 
 
@@ -332,8 +333,63 @@ def test_tenant_can_upload_maintenance_attachment_comment(
     assert data["comments_count"] == 1
     comment = data["comments"][0]
     assert comment["attachment_name"] == "issue.png"
-    assert comment["attachment_url"].startswith("/uploads/maintenance/")
+    assert comment["attachment_url"].startswith("/api/maintenance/")
     assert comment["attachment_content_type"] == "image/png"
+
+
+def test_maintenance_attachment_requires_authenticated_access(
+    client: TestClient,
+    session: Session,
+    auth_landlord: Landlord,
+    auth_headers: dict,
+):
+    _, _, _, tenant_headers = _create_tenant_context(session, auth_landlord.id)
+    _, _, _, other_tenant_headers = _create_tenant_context(
+        session, auth_landlord.id, name="Tenant Two"
+    )
+    created = client.post(
+        "/api/tenant-auth/maintenance",
+        headers=tenant_headers,
+        json={
+            "category": "plumbing",
+            "urgency": "high",
+            "title": "Burst pipe",
+            "description": "Water is leaking behind the sink.",
+        },
+    )
+    request_id = created.json()["id"]
+
+    attachment = client.post(
+        f"/api/tenant-auth/maintenance/{request_id}/comments/attachments",
+        headers=tenant_headers,
+        files={"file": ("issue.png", b"\x89PNG\r\n\x1a\n", "image/png")},
+        data={"body": "Leak photo"},
+    )
+
+    assert attachment.status_code == 201
+    comment_payload = attachment.json()["comments"][0]
+    secure_url = comment_payload["attachment_url"]
+    comment = session.exec(
+        select(MaintenanceComment).where(MaintenanceComment.request_id == request_id)
+    ).first()
+
+    assert comment is not None
+    assert comment.attachment_url is not None
+    assert comment.attachment_url.startswith("/uploads/maintenance/")
+
+    public_response = client.get(comment.attachment_url)
+    assert public_response.status_code == 404
+
+    tenant_response = client.get(secure_url, headers=tenant_headers)
+    assert tenant_response.status_code == 200
+    assert tenant_response.content == b"\x89PNG\r\n\x1a\n"
+
+    landlord_response = client.get(secure_url, headers=auth_headers)
+    assert landlord_response.status_code == 200
+    assert landlord_response.content == b"\x89PNG\r\n\x1a\n"
+
+    other_tenant_response = client.get(secure_url, headers=other_tenant_headers)
+    assert other_tenant_response.status_code == 404
 
 
 def test_tenant_can_resolve_then_reopen_request(
