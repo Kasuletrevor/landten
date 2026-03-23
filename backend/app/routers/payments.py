@@ -1,13 +1,19 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Form, Request
 from fastapi.responses import FileResponse
 from sqlmodel import Session, select
-from typing import Optional, List
+from typing import Optional, List, Awaitable
 from datetime import datetime, date, timezone
 from dateutil.relativedelta import relativedelta
 import mimetypes
+import logging
 
 from app.core.database import get_session
-from app.core.security import decode_token, get_current_landlord, get_current_tenant
+from app.core.security import (
+    decode_token,
+    get_current_landlord,
+    get_current_tenant,
+    get_token_from_request,
+)
 from app.models.landlord import Landlord
 from app.models.property import Property
 from app.models.room import Room
@@ -15,7 +21,7 @@ from app.models.tenant import Tenant
 from app.models.payment_schedule import PaymentSchedule, PaymentFrequency
 from app.models.payment import Payment, PaymentStatus
 from app.models.payment_dispute import DisputeActorType, PaymentDisputeMessage
-from app.services import notification_service
+from app.services import email_service, notification_service
 from app.services.payment_dispute_service import (
     get_dispute_for_payment,
     get_unread_count,
@@ -48,6 +54,18 @@ import uuid
 from typing import Annotated
 
 router = APIRouter(prefix="/payments", tags=["Payments"])
+logger = logging.getLogger(__name__)
+
+
+async def _run_post_commit_task(
+    task_name: str,
+    coroutine: Awaitable[object],
+    **context: object,
+) -> None:
+    try:
+        await coroutine
+    except Exception:
+        logger.exception("Post-commit payment task failed", extra={"task_name": task_name, **context})
 
 
 def _resolve_receipt_file_path(receipt_url: str) -> str:
@@ -78,7 +96,6 @@ def _resolve_receipt_file_path(receipt_url: str) -> str:
 
 async def _get_current_receipt_viewer(
     request: Request,
-    token: Optional[str] = Query(None),
     session: Session = Depends(get_session),
 ):
     """Authenticate either landlord or tenant for receipt viewing."""
@@ -88,12 +105,7 @@ async def _get_current_receipt_viewer(
         headers={"WWW-Authenticate": "Bearer"},
     )
 
-    bearer_token = token
-    if not bearer_token:
-        auth_header = request.headers.get("authorization")
-        if auth_header and auth_header.lower().startswith("bearer "):
-            bearer_token = auth_header.split(" ", 1)[1]
-
+    bearer_token = get_token_from_request(request)
     if not bearer_token:
         raise credentials_exception
 
@@ -164,6 +176,8 @@ def update_payment_status(payment: Payment, today: date) -> PaymentStatus:
         PaymentStatus.ON_TIME,
         PaymentStatus.LATE,
         PaymentStatus.WAIVED,
+        # Tenant has submitted proof; status should remain until landlord action.
+        PaymentStatus.VERIFYING,
     ]:
         return payment.status
 
@@ -736,7 +750,10 @@ async def reject_payment_receipt(
     Reject a receipt that was uploaded by the tenant.
     Returns payment to PENDING or OVERDUE status based on current date.
     """
-    payment = verify_payment_access(payment_id, current_landlord.id, session)
+    payment, tenant, property_obj = get_payment_for_landlord(
+        session, payment_id, current_landlord.id
+    )
+    room = session.get(Room, tenant.room_id)
 
     if payment.status != PaymentStatus.VERIFYING:
         raise HTTPException(
@@ -759,6 +776,42 @@ async def reject_payment_receipt(
     session.add(payment)
     session.commit()
     session.refresh(payment)
+
+    await _run_post_commit_task(
+        "broadcast_receipt_rejection",
+        notification_service.broadcast_to_tenant(
+            tenant.id,
+            "payment_receipt_rejected",
+            {
+                "title": "Payment receipt rejected",
+                "message": reject_data.reason,
+                "payment_id": payment.id,
+                "status": payment.status.value,
+                "rejection_reason": payment.rejection_reason,
+                "updated_at": payment.updated_at.isoformat(),
+            },
+        ),
+        payment_id=payment.id,
+        tenant_id=tenant.id,
+    )
+
+    if tenant.email:
+        await _run_post_commit_task(
+            "send_receipt_rejection_email",
+            email_service.send_receipt_rejected(
+                tenant_name=tenant.name,
+                tenant_email=tenant.email,
+                amount=payment.amount_due,
+                currency=room.currency if room else None,
+                property_name=property_obj.name,
+                room_name=room.name if room else None,
+                landlord_name=current_landlord.name,
+                rejection_reason=reject_data.reason,
+            ),
+            payment_id=payment.id,
+            tenant_id=tenant.id,
+            recipient_email=tenant.email,
+        )
 
     return enrich_payment_with_tenant(payment, session)
 
@@ -983,9 +1036,10 @@ async def post_payment_dispute_message(
     current_landlord: Landlord = Depends(get_current_landlord),
     session: Session = Depends(get_session),
 ):
-    payment, tenant, _ = get_payment_for_landlord(
+    payment, tenant, property_obj = get_payment_for_landlord(
         session, payment_id, current_landlord.id
     )
+    room = session.get(Room, tenant.room_id)
 
     body = payload.body.strip()
     if not body:
@@ -1002,17 +1056,39 @@ async def post_payment_dispute_message(
         body=body,
     )
 
-    await notification_service.broadcast_to_tenant(
-        tenant.id,
-        "payment_dispute_message",
-        {
-            "title": "Landlord replied on payment discussion",
-            "message": body,
-            "payment_id": payment.id,
-            "author_type": "landlord",
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        },
+    await _run_post_commit_task(
+        "broadcast_dispute_message_to_tenant",
+        notification_service.broadcast_to_tenant(
+            tenant.id,
+            "payment_dispute_message",
+            {
+                "title": "Landlord replied on payment discussion",
+                "message": body,
+                "payment_id": payment.id,
+                "author_type": "landlord",
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            },
+        ),
+        payment_id=payment.id,
+        tenant_id=tenant.id,
     )
+    if tenant.email:
+        await _run_post_commit_task(
+            "send_dispute_email_to_tenant",
+            email_service.send_payment_dispute_update(
+                recipient_name=tenant.name,
+                recipient_email=tenant.email,
+                actor_name=current_landlord.name,
+                property_name=property_obj.name,
+                room_name=room.name if room else None,
+                amount=payment.amount_due,
+                currency=room.currency if room else None,
+                message=body,
+            ),
+            payment_id=payment.id,
+            tenant_id=tenant.id,
+            recipient_email=tenant.email,
+        )
     return build_dispute_response(session, dispute, "landlord")
 
 
@@ -1028,9 +1104,10 @@ async def post_payment_dispute_attachment(
     current_landlord: Landlord = Depends(get_current_landlord),
     session: Session = Depends(get_session),
 ):
-    payment, tenant, _ = get_payment_for_landlord(
+    payment, tenant, property_obj = get_payment_for_landlord(
         session, payment_id, current_landlord.id
     )
+    room = session.get(Room, tenant.room_id)
     (
         attachment_name,
         attachment_url,
@@ -1051,19 +1128,42 @@ async def post_payment_dispute_attachment(
         attachment_size_bytes=size_bytes,
     )
 
-    await notification_service.broadcast_to_tenant(
-        tenant.id,
-        "payment_dispute_message",
-        {
-            "title": "Landlord shared an attachment",
-            "message": message_body,
-            "payment_id": payment.id,
-            "author_type": "landlord",
-            "attachment_name": attachment_name,
-            "has_attachment": True,
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        },
+    await _run_post_commit_task(
+        "broadcast_dispute_attachment_to_tenant",
+        notification_service.broadcast_to_tenant(
+            tenant.id,
+            "payment_dispute_message",
+            {
+                "title": "Landlord shared an attachment",
+                "message": message_body,
+                "payment_id": payment.id,
+                "author_type": "landlord",
+                "attachment_name": attachment_name,
+                "has_attachment": True,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            },
+        ),
+        payment_id=payment.id,
+        tenant_id=tenant.id,
     )
+    if tenant.email:
+        await _run_post_commit_task(
+            "send_dispute_attachment_email_to_tenant",
+            email_service.send_payment_dispute_update(
+                recipient_name=tenant.name,
+                recipient_email=tenant.email,
+                actor_name=current_landlord.name,
+                property_name=property_obj.name,
+                room_name=room.name if room else None,
+                amount=payment.amount_due,
+                currency=room.currency if room else None,
+                message=message_body,
+                has_attachment=True,
+            ),
+            payment_id=payment.id,
+            tenant_id=tenant.id,
+            recipient_email=tenant.email,
+        )
     return build_dispute_response(session, dispute, "landlord")
 
 

@@ -80,6 +80,7 @@ class RoomFactory:
         rent_amount: float = 1000.0,
         currency: str = "UGX",
         is_occupied: bool = False,
+        description: Optional[str] = None,
     ) -> Room:
         room = Room(
             name=name,
@@ -87,6 +88,7 @@ class RoomFactory:
             currency=currency,
             property_id=property_id,
             is_occupied=is_occupied,
+            description=description,
         )
         session.add(room)
         session.commit()

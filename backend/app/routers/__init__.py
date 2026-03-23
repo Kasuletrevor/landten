@@ -2,7 +2,15 @@
 API Routers package.
 """
 
-from app.routers import auth, properties, rooms, tenants, payments, notifications
+from app.routers import (
+    auth,
+    properties,
+    rooms,
+    tenants,
+    payments,
+    notifications,
+    maintenance,
+)
 
 __all__ = [
     "auth",
@@ -11,4 +19,5 @@ __all__ = [
     "tenants",
     "payments",
     "notifications",
+    "maintenance",
 ]

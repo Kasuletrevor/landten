@@ -1,12 +1,14 @@
+import logging
+import os
+import shutil
+import uuid
+import mimetypes
+from datetime import datetime, timezone
+from typing import Optional, List
+
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from fastapi.responses import FileResponse
 from sqlmodel import Session, select
-from typing import Optional, List
-from datetime import datetime, timezone
-import shutil
-import os
-import uuid
-import mimetypes
 
 from app.core.database import get_session
 from app.core.security import get_current_landlord, get_current_tenant
@@ -25,6 +27,7 @@ from app.schemas.lease_agreement import (
 )
 
 router = APIRouter(prefix="/leases", tags=["Lease Agreements"])
+logger = logging.getLogger(__name__)
 
 
 # Helper functions
@@ -111,6 +114,23 @@ def _resolve_lease_file_path(file_url: str) -> str:
         )
 
     return file_path
+
+
+def _delete_lease_file(file_url: str, lease_id: str, slot: str) -> None:
+    """Delete a lease file if it exists, but always log filesystem failures."""
+    try:
+        file_path = _resolve_lease_file_path(file_url)
+        if os.path.exists(file_path):
+            os.remove(file_path)
+    except Exception:
+        logger.exception(
+            "Failed to delete lease file",
+            extra={
+                "lease_id": lease_id,
+                "file_url": file_url,
+                "slot": slot,
+            },
+        )
 
 
 # Landlord Endpoints
@@ -368,20 +388,10 @@ async def delete_lease(
 
     # Delete files
     if lease.original_url:
-        try:
-            file_path = _resolve_lease_file_path(lease.original_url)
-            if os.path.exists(file_path):
-                os.remove(file_path)
-        except:
-            pass  # Ignore errors deleting files
+        _delete_lease_file(lease.original_url, lease.id, "original")
 
     if lease.signed_url:
-        try:
-            file_path = _resolve_lease_file_path(lease.signed_url)
-            if os.path.exists(file_path):
-                os.remove(file_path)
-        except:
-            pass
+        _delete_lease_file(lease.signed_url, lease.id, "signed")
 
     session.delete(lease)
     session.commit()

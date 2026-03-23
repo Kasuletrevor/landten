@@ -870,8 +870,19 @@ def test_payment_timestamps(
     payment = payment_factory(tenant_id=tenant.id)
     after_creation = datetime.now(timezone.utc)
 
-    assert before_creation <= payment.created_at <= after_creation
-    assert before_creation <= payment.updated_at <= after_creation
+    created_at = (
+        payment.created_at
+        if payment.created_at.tzinfo is not None
+        else payment.created_at.replace(tzinfo=timezone.utc)
+    )
+    updated_at = (
+        payment.updated_at
+        if payment.updated_at.tzinfo is not None
+        else payment.updated_at.replace(tzinfo=timezone.utc)
+    )
+
+    assert before_creation <= created_at <= after_creation
+    assert before_creation <= updated_at <= after_creation
 
 
 def test_payment_update_timestamp(

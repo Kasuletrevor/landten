@@ -2,6 +2,7 @@ from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime, date
 from app.models.payment import PaymentStatus
+from app.models.payment_dispute import DisputeStatus, DisputeActorType
 
 
 # Request schemas
@@ -52,6 +53,9 @@ class PaymentResponse(BaseModel):
     receipt_url: Optional[str] = None
     notes: Optional[str] = None
     rejection_reason: Optional[str] = None
+    dispute_status: Optional[DisputeStatus] = None
+    dispute_unread_count: int = 0
+    last_dispute_message_at: Optional[datetime] = None
     is_manual: bool
     created_at: datetime
     updated_at: datetime
@@ -92,3 +96,44 @@ class PaymentSummary(BaseModel):
     total_paid_this_month: int = 0
     amount_collected_this_month: float = 0.0
     amount_outstanding: float = 0.0
+
+
+class PaymentDisputeMessageCreate(BaseModel):
+    body: str
+
+
+class PaymentDisputeMessageResponse(BaseModel):
+    id: str
+    dispute_id: str
+    payment_id: str
+    author_type: DisputeActorType
+    author_id: str
+    body: str
+    attachment_name: Optional[str] = None
+    attachment_url: Optional[str] = None
+    attachment_content_type: Optional[str] = None
+    attachment_size_bytes: Optional[int] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class PaymentDisputeResponse(BaseModel):
+    id: str
+    payment_id: str
+    status: DisputeStatus
+    opened_by_type: DisputeActorType
+    opened_by_id: str
+    opened_at: datetime
+    resolved_by_type: Optional[DisputeActorType] = None
+    resolved_by_id: Optional[str] = None
+    resolved_at: Optional[datetime] = None
+    landlord_last_read_at: Optional[datetime] = None
+    tenant_last_read_at: Optional[datetime] = None
+    last_message_at: Optional[datetime] = None
+    unread_count: int = 0
+    messages: List[PaymentDisputeMessageResponse] = []
+
+    class Config:
+        from_attributes = True

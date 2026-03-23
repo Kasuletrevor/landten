@@ -658,6 +658,18 @@ class TestWorkflow4MultiTenantProperty:
         assert mark_late_response.status_code == 200
         assert mark_late_response.json()["status"] == "late"
 
+        # Keep tenant 5's unpaid payment within grace window so it remains pending.
+        tenant5 = session.get(Tenant, tenant_ids[4])
+        tenant5_payment = session.exec(
+            select(Payment).where(Payment.tenant_id == tenant5.id)
+        ).first()
+        tenant5_payment.due_date = today
+        tenant5_payment.window_end_date = today + timedelta(days=5)
+        tenant5_payment.period_end = today + timedelta(days=30)
+        tenant5_payment.status = PaymentStatus.PENDING
+        session.add(tenant5_payment)
+        session.commit()
+
         # Step 7: Verify updated statistics
         final_dashboard_response = client.get(
             "/api/analytics/dashboard",

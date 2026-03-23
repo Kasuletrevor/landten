@@ -1,10 +1,12 @@
 import pytest
 from sqlmodel import Session
 from fastapi.testclient import TestClient
-from app.core.security import create_access_token
+from app.core.security import AUTH_COOKIE_NAME, create_access_token, get_password_hash
 from app.models.tenant import Tenant
 from app.models.room import Room
 from app.models.property import Property
+from app.models.payment import PaymentStatus
+from tests.factories import PaymentFactory
 
 
 def test_tenant_portal_flow(client: TestClient, session: Session, tenant_data):
@@ -45,6 +47,7 @@ def test_tenant_portal_flow(client: TestClient, session: Session, tenant_data):
     login_data = login_response.json()
     assert "access_token" in login_data
     tenant_token = login_data["access_token"]
+    assert AUTH_COOKIE_NAME in login_response.cookies
 
     # 4. Access tenant dashboard (get profile)
     dashboard_response = client.get(
@@ -117,3 +120,83 @@ def test_tenant_setup_password_already_set(
     # Should fail because password is already set
     assert response.status_code == 400
     assert "already set" in response.json()["detail"]
+
+
+def test_tenant_stream_rejects_query_token(client: TestClient, tenant_data):
+    """SSE stream should not accept tokens in URL query params."""
+    tenant = tenant_data["tenant"]
+    token = create_access_token(data={"sub": tenant.id, "type": "tenant"})
+
+    response = client.get(f"/api/tenant-auth/stream?token={token}")
+    assert response.status_code == 401
+
+
+def test_tenant_logout_clears_auth_cookie(client: TestClient, tenant_data):
+    """Tenant logout should clear auth cookie."""
+    tenant = tenant_data["tenant"]
+    token = create_access_token(data={"sub": tenant.id, "type": "tenant"})
+    client.cookies.set(AUTH_COOKIE_NAME, "test-cookie")
+    logout = client.post(
+        "/api/tenant-auth/logout",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert logout.status_code == 200
+    assert logout.json()["message"] == "Logged out"
+    set_cookie_header = logout.headers.get("set-cookie", "")
+    assert AUTH_COOKIE_NAME in set_cookie_header
+    assert "Max-Age=0" in set_cookie_header
+
+
+def test_tenant_cookie_auth_can_access_profile(
+    client: TestClient, session: Session, tenant_data
+):
+    """Tenant login cookie should authorize /tenant-auth/me without Authorization header."""
+    tenant = tenant_data["tenant"]
+    tenant.password_hash = get_password_hash("tenantpass123")
+    session.add(tenant)
+    session.commit()
+    session.refresh(tenant)
+
+    login_response = client.post(
+        "/api/tenant-auth/login",
+        json={"email": tenant.email, "password": "tenantpass123"},
+    )
+    assert login_response.status_code == 200
+    assert AUTH_COOKIE_NAME in login_response.cookies
+
+    me_response = client.get("/api/tenant-auth/me")
+    assert me_response.status_code == 200
+    assert me_response.json()["email"] == tenant.email
+
+
+def test_tenant_payments_include_rejection_details(
+    client: TestClient, session: Session, tenant_data
+):
+    """Tenant payment listing should include rejection metadata for receipt retries."""
+    tenant = tenant_data["tenant"]
+    token = create_access_token(data={"sub": tenant.id, "type": "tenant"})
+
+    payment = PaymentFactory.create(
+        session=session,
+        tenant_id=tenant.id,
+        status=PaymentStatus.PENDING,
+        payment_reference="BANK-123",
+        receipt_url="/uploads/receipts/rejected.png",
+        notes="Awaiting corrected proof",
+    )
+    payment.rejection_reason = "Receipt image is unreadable."
+    session.add(payment)
+    session.commit()
+
+    response = client.get(
+        "/api/tenant-auth/payments",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 200
+    payment_payload = next(item for item in response.json()["payments"] if item["id"] == payment.id)
+    assert payment_payload["payment_reference"] == "BANK-123"
+    assert payment_payload["receipt_url"] == "/uploads/receipts/rejected.png"
+    assert payment_payload["notes"] == "Awaiting corrected proof"
+    assert payment_payload["rejection_reason"] == "Receipt image is unreadable."

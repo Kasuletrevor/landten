@@ -2,11 +2,13 @@
 Tests for lease agreement endpoints.
 """
 
+import logging
 import pytest
 import os
 from fastapi.testclient import TestClient
 from sqlmodel import Session
 
+from app.routers import leases as lease_router
 from app.models.lease_agreement import LeaseAgreement, LeaseStatus
 from app.models.landlord import Landlord
 from app.models.tenant import Tenant
@@ -254,6 +256,50 @@ class TestLandlordLeaseEndpoints:
         # Verify lease is deleted
         response = client.get(f"/api/leases/{lease.id}", headers=headers)
         assert response.status_code == 404
+
+    def test_delete_lease_logs_file_delete_failures(
+        self,
+        client: TestClient,
+        session: Session,
+        caplog: pytest.LogCaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        """Test lease deletion logs filesystem failures instead of swallowing them."""
+        landlord = LandlordFactory.create(session=session)
+        property_obj = PropertyFactory.create(session=session, landlord_id=landlord.id)
+        room = RoomFactory.create(session=session, property_id=property_obj.id)
+        tenant = TenantFactory.create(session=session, room_id=room.id)
+
+        lease = LeaseAgreement(
+            tenant_id=tenant.id,
+            property_id=property_obj.id,
+            original_url="/uploads/leases/lease.pdf",
+            signed_url="/uploads/leases/lease-signed.pdf",
+            status=LeaseStatus.SIGNED,
+        )
+        session.add(lease)
+        session.commit()
+        session.refresh(lease)
+
+        from app.core.security import create_access_token
+
+        token = create_access_token(data={"sub": landlord.id, "type": "landlord"})
+        headers = {"Authorization": f"Bearer {token}"}
+
+        monkeypatch.setattr(lease_router, "_resolve_lease_file_path", lambda _url: "broken.pdf")
+        monkeypatch.setattr(lease_router.os.path, "exists", lambda _path: True)
+
+        def raise_remove(_path: str) -> None:
+            raise OSError("disk failure")
+
+        monkeypatch.setattr(lease_router.os, "remove", raise_remove)
+
+        with caplog.at_level(logging.ERROR):
+            response = client.delete(f"/api/leases/{lease.id}", headers=headers)
+
+        assert response.status_code == 204
+        assert "Failed to delete lease file" in caplog.text
+        assert "disk failure" in caplog.text
 
     def test_lease_summary(
         self, client: TestClient, session: Session, auth_headers: dict

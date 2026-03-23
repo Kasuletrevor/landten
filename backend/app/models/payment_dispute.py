@@ -42,7 +42,10 @@ class PaymentDispute(SQLModel, table=True):
     last_message_at: Optional[datetime] = None
 
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        sa_column_kwargs={"onupdate": lambda: datetime.now(timezone.utc)},
+    )
 
 
 class PaymentDisputeMessage(SQLModel, table=True):
@@ -57,5 +60,9 @@ class PaymentDisputeMessage(SQLModel, table=True):
     author_type: DisputeActorType
     author_id: str
     body: str
+    attachment_name: Optional[str] = None
+    attachment_url: Optional[str] = None
+    attachment_content_type: Optional[str] = None
+    attachment_size_bytes: Optional[int] = None
 
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
