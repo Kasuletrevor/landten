@@ -1,21 +1,29 @@
 from datetime import datetime, timezone
 from typing import Optional, Awaitable
 import logging
+import os
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, status, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, status, UploadFile
+from fastapi.responses import FileResponse
 from sqlmodel import Session, select
 from sqlalchemy import or_
 
 from app.core.database import get_session
-from app.core.security import get_current_landlord
+from app.core.security import (
+    decode_token,
+    get_current_landlord,
+    get_token_from_request,
+)
 from app.models.landlord import Landlord
 from app.models.maintenance import (
     MaintenanceAuthorType,
+    MaintenanceComment,
     MaintenanceRequest,
     MaintenanceStatus,
     MaintenanceUrgency,
 )
 from app.models.property import Property
+from app.models.tenant import Tenant
 from app.schemas.maintenance import (
     MaintenanceCommentCreate,
     MaintenanceRequestListResponse,
@@ -26,8 +34,11 @@ from app.services import email_service, notification_service
 from app.services.maintenance_service import (
     assert_valid_status_transition,
     build_maintenance_response,
+    build_maintenance_attachment_url,
     create_maintenance_comment,
     get_request_for_landlord,
+    get_request_for_tenant,
+    resolve_maintenance_attachment_file_path,
     save_maintenance_attachment,
 )
 
@@ -54,6 +65,41 @@ def _get_landlord_property_ids(session: Session, landlord_id: str) -> list[str]:
         select(Property).where(Property.landlord_id == landlord_id)
     ).all()
     return [p.id for p in properties]
+
+
+async def _get_current_maintenance_viewer(
+    request: Request,
+    session: Session = Depends(get_session),
+):
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+    bearer_token = get_token_from_request(request)
+    if not bearer_token:
+        raise credentials_exception
+
+    payload = decode_token(bearer_token)
+    if payload is None:
+        raise credentials_exception
+
+    user_id = payload.get("sub")
+    token_type = payload.get("type", "landlord")
+    if not user_id:
+        raise credentials_exception
+
+    if token_type == "tenant":
+        tenant = session.get(Tenant, user_id)
+        if tenant is None or not tenant.is_active:
+            raise credentials_exception
+        return ("tenant", tenant)
+
+    landlord = session.get(Landlord, user_id)
+    if landlord is None:
+        raise credentials_exception
+    return ("landlord", landlord)
 
 
 @router.get("", response_model=MaintenanceRequestListResponse)
@@ -111,6 +157,52 @@ async def get_maintenance_request(
     )
     return build_maintenance_response(
         session, maintenance_request, viewer_type="landlord", include_comments=True
+    )
+
+
+@router.get("/{request_id}/comments/{comment_id}/attachment")
+async def get_maintenance_comment_attachment(
+    request_id: str,
+    comment_id: str,
+    viewer=Depends(_get_current_maintenance_viewer),
+    session: Session = Depends(get_session),
+):
+    viewer_type, viewer_user = viewer
+
+    if viewer_type == "landlord":
+        get_request_for_landlord(session, request_id, viewer_user.id)
+    else:
+        get_request_for_tenant(session, request_id, viewer_user.id)
+
+    comment = session.exec(
+        select(MaintenanceComment).where(
+            MaintenanceComment.id == comment_id,
+            MaintenanceComment.request_id == request_id,
+        )
+    ).first()
+
+    if not comment or not comment.attachment_url:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Attachment not found",
+        )
+    if viewer_type == "tenant" and comment.is_internal:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Attachment not found",
+        )
+
+    file_path = resolve_maintenance_attachment_file_path(comment.attachment_url)
+    if not os.path.exists(file_path):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Attachment not found",
+        )
+
+    return FileResponse(
+        file_path,
+        media_type=comment.attachment_content_type or "application/octet-stream",
+        filename=comment.attachment_name or os.path.basename(file_path),
     )
 
 
@@ -288,7 +380,7 @@ async def add_maintenance_attachment_comment(
         await save_maintenance_attachment(file, maintenance_request.id)
     )
     message_body = (body or "").strip() or f"Attachment shared: {attachment_name}"
-    _ = create_maintenance_comment(
+    comment = create_maintenance_comment(
         session,
         maintenance_request=maintenance_request,
         author_type=MaintenanceAuthorType.LANDLORD,
@@ -299,6 +391,11 @@ async def add_maintenance_attachment_comment(
         attachment_url=attachment_url,
         attachment_content_type=content_type,
         attachment_size_bytes=size_bytes,
+    )
+    secure_attachment_url = build_maintenance_attachment_url(
+        maintenance_request.id,
+        comment.id,
+        attachment_url,
     )
     if not is_internal:
         await _run_post_commit_task(
@@ -312,7 +409,7 @@ async def add_maintenance_attachment_comment(
                     "author_type": "landlord",
                     "message": message_body,
                     "request_title": maintenance_request.title,
-                    "attachment_url": attachment_url,
+                    "attachment_url": secure_attachment_url,
                 },
             ),
             request_id=maintenance_request.id,
