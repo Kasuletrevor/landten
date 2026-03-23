@@ -953,7 +953,7 @@ function SendReminderModal({
   payment: PaymentWithTenant;
   onClose: () => void;
 }) {
-  const method: "email" = "email";
+  const method = "email" as const;
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<{ success: boolean; message: string } | null>(null);
 
