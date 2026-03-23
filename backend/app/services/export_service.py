@@ -2,21 +2,38 @@
 Export service for generating Excel and PDF reports of payment data.
 """
 
-from typing import List, Optional
+from collections import defaultdict
 from datetime import date
-from io import BytesIO
+from dataclasses import dataclass
 from decimal import Decimal
+from io import BytesIO
+from typing import List
 
 from openpyxl import Workbook
-from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter, landscape
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
-
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from sqlmodel import Session
 from app.models.payment import Payment, PaymentStatus
+from app.models.property import Property
+from app.models.room import Room
+from app.models.tenant import Tenant
+
+
+@dataclass(frozen=True)
+class PaymentExportRow:
+    payment: Payment
+    tenant_name: str
+    tenant_email: str
+    tenant_phone: str
+    property_name: str
+    room_name: str
+    currency: str
+    days_overdue: int | None
 
 
 class ExportService:
@@ -31,7 +48,117 @@ class ExportService:
     TEXT_COLOR = "1F2937"  # Dark gray
 
     @staticmethod
+    def _build_payment_rows(
+        session: Session, payments: List[Payment]
+    ) -> list[PaymentExportRow]:
+        tenant_cache: dict[str, Tenant | None] = {}
+        room_cache: dict[str, Room | None] = {}
+        property_cache: dict[str, Property | None] = {}
+        rows: list[PaymentExportRow] = []
+
+        for payment in payments:
+            tenant = tenant_cache.get(payment.tenant_id)
+            if payment.tenant_id not in tenant_cache:
+                tenant = session.get(Tenant, payment.tenant_id)
+                tenant_cache[payment.tenant_id] = tenant
+
+            room: Room | None = None
+            if tenant and tenant.room_id:
+                room = room_cache.get(tenant.room_id)
+                if tenant.room_id not in room_cache:
+                    room = session.get(Room, tenant.room_id)
+                    room_cache[tenant.room_id] = room
+
+            property_obj: Property | None = None
+            if room and room.property_id:
+                property_obj = property_cache.get(room.property_id)
+                if room.property_id not in property_cache:
+                    property_obj = session.get(Property, room.property_id)
+                    property_cache[room.property_id] = property_obj
+
+            days_overdue = None
+            if payment.status == PaymentStatus.OVERDUE:
+                days_overdue = (date.today() - payment.due_date).days
+
+            rows.append(
+                PaymentExportRow(
+                    payment=payment,
+                    tenant_name=tenant.name if tenant else "Unknown",
+                    tenant_email=tenant.email if tenant else "",
+                    tenant_phone=tenant.phone if tenant else "",
+                    property_name=property_obj.name if property_obj else "Unknown",
+                    room_name=room.name if room else "Unknown",
+                    currency=room.currency if room else "USD",
+                    days_overdue=days_overdue,
+                )
+            )
+
+        return rows
+
+    @staticmethod
+    def _sum_amounts_by_currency(
+        rows: list[PaymentExportRow],
+        statuses: set[PaymentStatus] | None = None,
+    ) -> dict[str, Decimal]:
+        totals: dict[str, Decimal] = defaultdict(lambda: Decimal("0"))
+        for row in rows:
+            if statuses is not None and row.payment.status not in statuses:
+                continue
+            totals[row.currency] += Decimal(row.payment.amount_due)
+        return dict(totals)
+
+    @staticmethod
+    def _build_summary_rows(rows: list[PaymentExportRow]) -> list[list[str | int]]:
+        summary_rows: list[list[str | int]] = [["Total Payments", len(rows)]]
+        metric_totals = [
+            (
+                "Total Expected",
+                ExportService._sum_amounts_by_currency(rows),
+            ),
+            (
+                "Total Received",
+                ExportService._sum_amounts_by_currency(
+                    rows, {PaymentStatus.ON_TIME, PaymentStatus.LATE}
+                ),
+            ),
+            (
+                "Total Outstanding",
+                ExportService._sum_amounts_by_currency(
+                    rows, {PaymentStatus.PENDING, PaymentStatus.OVERDUE}
+                ),
+            ),
+            (
+                "Total Waived",
+                ExportService._sum_amounts_by_currency(rows, {PaymentStatus.WAIVED}),
+            ),
+        ]
+
+        for label, totals in metric_totals:
+            if not totals:
+                summary_rows.append([label, ExportService._format_currency(Decimal("0"), "USD")])
+                continue
+
+            currencies = sorted(totals)
+            if len(currencies) == 1:
+                currency = currencies[0]
+                summary_rows.append(
+                    [label, ExportService._format_currency(totals[currency], currency)]
+                )
+                continue
+
+            for currency in currencies:
+                summary_rows.append(
+                    [
+                        f"{label} ({currency})",
+                        ExportService._format_currency(totals[currency], currency),
+                    ]
+                )
+
+        return summary_rows
+
+    @staticmethod
     def generate_excel(
+        session: Session,
         payments: List[Payment],
         start_date: date,
         end_date: date,
@@ -52,6 +179,7 @@ class ExportService:
         wb = Workbook()
         ws = wb.active
         ws.title = "Payment Report"
+        rows = ExportService._build_payment_rows(session, payments)
 
         # Define styles
         header_font = Font(bold=True, size=12, color="FFFFFF")
@@ -95,32 +223,7 @@ class ExportService:
         )
         current_row += 1
 
-        # Calculate summary stats
-        total_expected = sum(p.amount_due for p in payments)
-        total_received = sum(
-            p.amount_due
-            for p in payments
-            if p.status in [PaymentStatus.ON_TIME, PaymentStatus.LATE]
-        )
-        total_outstanding = sum(
-            p.amount_due
-            for p in payments
-            if p.status in [PaymentStatus.PENDING, PaymentStatus.OVERDUE]
-        )
-        total_waived = sum(
-            p.amount_due for p in payments if p.status == PaymentStatus.WAIVED
-        )
-
-        summary_data = [
-            ["Total Payments", len(payments)],
-            ["Total Expected", ExportService._format_currency(total_expected, "USD")],
-            ["Total Received", ExportService._format_currency(total_received, "USD")],
-            [
-                "Total Outstanding",
-                ExportService._format_currency(total_outstanding, "USD"),
-            ],
-            ["Total Waived", ExportService._format_currency(total_waived, "USD")],
-        ]
+        summary_data = ExportService._build_summary_rows(rows)
 
         for label, value in summary_data:
             ws[f"A{current_row}"] = label
@@ -171,57 +274,40 @@ class ExportService:
         data_start_row = current_row
 
         # Data rows
-        for payment in payments:
-            # Get related data
-            from app.models.tenant import Tenant
-            from app.models.room import Room
-            from app.models.property import Property
-            from sqlmodel import Session
-            from app.core.database import engine
+        for row in rows:
+            payment = row.payment
+            row_data = [
+                row.tenant_name,
+                row.tenant_email,
+                row.tenant_phone,
+                row.property_name,
+                row.room_name,
+                payment.period_start.strftime("%Y-%m-%d"),
+                payment.period_end.strftime("%Y-%m-%d"),
+                payment.amount_due,
+                row.currency,
+                payment.due_date.strftime("%Y-%m-%d"),
+                payment.paid_date.strftime("%Y-%m-%d") if payment.paid_date else "",
+                payment.status.value,
+                row.days_overdue if row.days_overdue else "",
+                payment.payment_reference or "",
+                payment.notes or "",
+            ]
 
-            with Session(engine) as session:
-                tenant = session.get(Tenant, payment.tenant_id)
-                room = session.get(Room, tenant.room_id) if tenant else None
-                property_obj = session.get(Property, room.property_id) if room else None
+            for col_num, value in enumerate(row_data, 1):
+                cell = ws.cell(row=current_row, column=col_num)
+                cell.value = value
+                cell.border = border
 
-                # Calculate days overdue
-                days_overdue = None
-                if payment.status == PaymentStatus.OVERDUE:
-                    days_overdue = (date.today() - payment.due_date).days
+                if col_num == 8:
+                    cell.number_format = "#,##0.00"
+                    cell.alignment = Alignment(horizontal="right")
+                elif col_num in [12, 13]:
+                    cell.alignment = Alignment(horizontal="center")
+                else:
+                    cell.alignment = Alignment(horizontal="left")
 
-                row_data = [
-                    tenant.name if tenant else "Unknown",
-                    tenant.email if tenant else "",
-                    tenant.phone if tenant else "",
-                    property_obj.name if property_obj else "Unknown",
-                    room.name if room else "Unknown",
-                    payment.period_start.strftime("%Y-%m-%d"),
-                    payment.period_end.strftime("%Y-%m-%d"),
-                    payment.amount_due,
-                    room.currency if room else "USD",
-                    payment.due_date.strftime("%Y-%m-%d"),
-                    payment.paid_date.strftime("%Y-%m-%d") if payment.paid_date else "",
-                    payment.status.value,
-                    days_overdue if days_overdue else "",
-                    payment.payment_reference or "",
-                    payment.notes or "",
-                ]
-
-                for col_num, value in enumerate(row_data, 1):
-                    cell = ws.cell(row=current_row, column=col_num)
-                    cell.value = value
-                    cell.border = border
-
-                    # Formatting
-                    if col_num == 8:  # Amount Due column
-                        cell.number_format = "#,##0.00"
-                        cell.alignment = Alignment(horizontal="right")
-                    elif col_num in [12, 13]:  # Status, Days Overdue
-                        cell.alignment = Alignment(horizontal="center")
-                    else:
-                        cell.alignment = Alignment(horizontal="left")
-
-                current_row += 1
+            current_row += 1
 
         # Adjust column widths
         column_widths = [20, 25, 15, 20, 15, 12, 12, 12, 10, 12, 12, 12, 13, 20, 30]
@@ -239,6 +325,7 @@ class ExportService:
 
     @staticmethod
     def generate_pdf(
+        session: Session,
         payments: List[Payment],
         start_date: date,
         end_date: date,
@@ -265,6 +352,7 @@ class ExportService:
             topMargin=0.5 * inch,
             bottomMargin=0.5 * inch,
         )
+        rows = ExportService._build_payment_rows(session, payments)
 
         # Container for elements
         elements = []
@@ -314,33 +402,9 @@ class ExportService:
         # Summary Section
         elements.append(Paragraph("Summary", summary_style))
 
-        # Calculate summary stats
-        total_expected = sum(p.amount_due for p in payments)
-        total_received = sum(
-            p.amount_due
-            for p in payments
-            if p.status in [PaymentStatus.ON_TIME, PaymentStatus.LATE]
-        )
-        total_outstanding = sum(
-            p.amount_due
-            for p in payments
-            if p.status in [PaymentStatus.PENDING, PaymentStatus.OVERDUE]
-        )
-        total_waived = sum(
-            p.amount_due for p in payments if p.status == PaymentStatus.WAIVED
-        )
-
-        summary_data = [
-            ["Metric", "Value"],
-            ["Total Payments", str(len(payments))],
-            ["Total Expected", ExportService._format_currency(total_expected, "USD")],
-            ["Total Received", ExportService._format_currency(total_received, "USD")],
-            [
-                "Total Outstanding",
-                ExportService._format_currency(total_outstanding, "USD"),
-            ],
-            ["Total Waived", ExportService._format_currency(total_waived, "USD")],
-        ]
+        summary_data = [["Metric", "Value"]]
+        for label, value in ExportService._build_summary_rows(rows):
+            summary_data.append([str(label), str(value)])
 
         summary_table = Table(summary_data, colWidths=[2.5 * inch, 2 * inch])
         summary_table.setStyle(
@@ -373,7 +437,7 @@ class ExportService:
         elements.append(Spacer(1, 0.3 * inch))
 
         # Detailed Payments Section
-        if payments:
+        if rows:
             elements.append(Paragraph("Detailed Payments", summary_style))
 
             # Table headers
@@ -381,37 +445,25 @@ class ExportService:
                 ["Tenant", "Property", "Room", "Period", "Amount", "Due Date", "Status"]
             ]
 
-            # Add payment data
-            from app.models.tenant import Tenant
-            from app.models.room import Room
-            from app.models.property import Property
-            from sqlmodel import Session
-            from app.core.database import engine
+            for row in rows:
+                payment = row.payment
+                period = (
+                    f"{payment.period_start.strftime('%b %d')} - "
+                    f"{payment.period_end.strftime('%b %d')}"
+                )
+                amount = ExportService._format_currency(payment.amount_due, row.currency)
 
-            for payment in payments:
-                with Session(engine) as session:
-                    tenant = session.get(Tenant, payment.tenant_id)
-                    room = session.get(Room, tenant.room_id) if tenant else None
-                    property_obj = (
-                        session.get(Property, room.property_id) if room else None
-                    )
-
-                    period = f"{payment.period_start.strftime('%b %d')} - {payment.period_end.strftime('%b %d')}"
-                    amount = ExportService._format_currency(
-                        payment.amount_due, room.currency if room else "USD"
-                    )
-
-                    table_data.append(
-                        [
-                            tenant.name if tenant else "Unknown",
-                            property_obj.name if property_obj else "Unknown",
-                            room.name if room else "Unknown",
-                            period,
-                            amount,
-                            payment.due_date.strftime("%b %d, %Y"),
-                            payment.status.value,
-                        ]
-                    )
+                table_data.append(
+                    [
+                        row.tenant_name,
+                        row.property_name,
+                        row.room_name,
+                        period,
+                        amount,
+                        payment.due_date.strftime("%b %d, %Y"),
+                        payment.status.value,
+                    ]
+                )
 
             # Create table
             payments_table = Table(
@@ -468,7 +520,7 @@ class ExportService:
         return buffer
 
     @staticmethod
-    def _format_currency(amount: float, currency: str) -> str:
+    def _format_currency(amount: Decimal | float | None, currency: str) -> str:
         """Format amount with currency code."""
         if amount is None:
             return "-"
