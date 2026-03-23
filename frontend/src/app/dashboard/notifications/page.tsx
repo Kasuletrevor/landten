@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Bell, Filter, Check, CheckCheck, Search, X, Loader2, Download } from "lucide-react";
+import { Bell, Check, CheckCheck, Search, X, Loader2 } from "lucide-react";
 import api, { NotificationItem } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 

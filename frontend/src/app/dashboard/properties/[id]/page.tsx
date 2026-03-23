@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
+import { useParams } from "next/navigation";
 import Link from "next/link";
 import api, { PropertyWithStats, RoomWithTenant } from "@/lib/api";
 import { useToast } from "@/components/toast-provider";
@@ -37,7 +37,6 @@ const CURRENCIES = [
 
 export default function PropertyDetailPage() {
   const params = useParams();
-  const router = useRouter();
   const propertyId = params.id as string;
 
   const [property, setProperty] = useState<PropertyWithStats | null>(null);
@@ -53,11 +52,7 @@ export default function PropertyDetailPage() {
   const [deleteRoom, setDeleteRoom] = useState<RoomWithTenant | null>(null);
   const [showEditProperty, setShowEditProperty] = useState(false);
 
-  useEffect(() => {
-    loadData();
-  }, [propertyId]);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       const [propertyRes, roomsRes] = await Promise.all([
         api.getProperty(propertyId),
@@ -70,7 +65,11 @@ export default function PropertyDetailPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [propertyId]);
+
+  useEffect(() => {
+    void loadData();
+  }, [loadData]);
 
   const formatCurrency = (amount: number, currencyCode: string = "UGX") => {
     const currency = CURRENCIES.find(c => c.code === currencyCode) || CURRENCIES[0];

@@ -4,7 +4,7 @@ import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import api from "@/lib/api";
-import { Building2, Key, Lock, AlertCircle, CheckCircle, ArrowRight } from "lucide-react";
+import { Key, Lock, AlertCircle, CheckCircle, ArrowRight } from "lucide-react";
 
 function TenantSetupContent() {
   const router = useRouter();
@@ -38,7 +38,7 @@ function TenantSetupContent() {
     setIsLoading(true);
 
     try {
-      const res = await api.tenantSetupPassword(token, password);
+      await api.tenantSetupPassword(token, password);
       // Automatically store token if returned, or handle login redirect
       // The backend response for setup-password returns the TenantPortalResponse (profile)
       // but NOT a fresh access token for login. The user needs to log in explicitly.

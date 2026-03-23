@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import api, { TenantWithDetails, PropertyWithStats } from "@/lib/api";
 import {
@@ -17,7 +17,6 @@ import {
   UserMinus,
   Pencil,
   X,
-  Clock,
   CreditCard,
 } from "lucide-react";
 
@@ -30,11 +29,7 @@ export default function TenantsPage() {
   const [showActiveOnly, setShowActiveOnly] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
 
-  useEffect(() => {
-    loadData();
-  }, [filterProperty, showActiveOnly]);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       const [tenantsRes, propertiesRes] = await Promise.all([
         api.getTenants({
@@ -50,7 +45,11 @@ export default function TenantsPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [filterProperty, showActiveOnly]);
+
+  useEffect(() => {
+    void loadData();
+  }, [loadData]);
 
   const filteredTenants = tenants.filter(
     (tenant) =>
@@ -58,20 +57,6 @@ export default function TenantsPage() {
       tenant.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       tenant.phone?.includes(searchQuery)
   );
-
-  const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-      year: "numeric",
-    });
-  };
-
-  const getPaymentStatus = (tenant: TenantWithDetails) => {
-    if (!tenant.payments || tenant.payments.length === 0) return null;
-    const latestPayment = tenant.payments[0];
-    return latestPayment.status;
-  };
 
   if (isLoading) {
     return (
@@ -226,7 +211,6 @@ export default function TenantsPage() {
             <TenantCard
               key={tenant.id}
               tenant={tenant}
-              onUpdate={loadData}
               style={{ animationDelay: `${(i + 3) * 0.05}s` }}
             />
           ))}
@@ -247,11 +231,9 @@ export default function TenantsPage() {
 
 function TenantCard({
   tenant,
-  onUpdate,
   style,
 }: {
   tenant: TenantWithDetails;
-  onUpdate: () => void;
   style?: React.CSSProperties;
 }) {
   const [showMenu, setShowMenu] = useState(false);
@@ -425,13 +407,7 @@ function AddTenantModal({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    if (selectedProperty) {
-      loadRooms();
-    }
-  }, [selectedProperty]);
-
-  const loadRooms = async () => {
+  const loadRooms = useCallback(async () => {
     try {
       const res = await api.getRooms(selectedProperty);
       // Only show vacant rooms
@@ -444,7 +420,13 @@ function AddTenantModal({
     } catch (error) {
       console.error("Failed to load rooms:", error);
     }
-  };
+  }, [selectedProperty]);
+
+  useEffect(() => {
+    if (selectedProperty) {
+      void loadRooms();
+    }
+  }, [loadRooms, selectedProperty]);
 
   const handleSubmit = async () => {
     setError("");

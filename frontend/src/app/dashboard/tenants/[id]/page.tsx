@@ -1,11 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
+import { useParams } from "next/navigation";
 import Link from "next/link";
 import api, { TenantWithDetails, Payment, PaymentStatus } from "@/lib/api";
 import {
-  User,
   ArrowLeft,
   Mail,
   Phone,
@@ -28,7 +27,6 @@ import {
 
 export default function TenantDetailPage() {
   const params = useParams();
-  const router = useRouter();
   const tenantId = params.id as string;
 
   const [tenant, setTenant] = useState<TenantWithDetails | null>(null);
@@ -42,11 +40,7 @@ export default function TenantDetailPage() {
   const [showEnablePortal, setShowEnablePortal] = useState(false);
   const [markPaidPayment, setMarkPaidPayment] = useState<Payment | null>(null);
 
-  useEffect(() => {
-    loadData();
-  }, [tenantId]);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       const res = await api.getTenant(tenantId);
       setTenant(res);
@@ -55,7 +49,11 @@ export default function TenantDetailPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [tenantId]);
+
+  useEffect(() => {
+    void loadData();
+  }, [loadData]);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("en-US", {
