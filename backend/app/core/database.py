@@ -2,8 +2,9 @@ from sqlmodel import SQLModel, create_engine, Session
 from typing import Generator
 from app.core.config import settings
 
-# Create engine with SQLite-specific settings
-connect_args = {"check_same_thread": False}  # Required for SQLite
+# Create engine with driver-specific settings
+is_sqlite = settings.DATABASE_URL.startswith("sqlite")
+connect_args = {"check_same_thread": False} if is_sqlite else {}
 engine = create_engine(
     settings.DATABASE_URL,
     echo=True,  # Set to False in production

@@ -5,6 +5,7 @@ uvicorn[standard]==0.27.1
 # Database
 sqlmodel==0.0.14
 alembic==1.13.1
+psycopg[binary]==3.2.9
 
 # Authentication
 python-jose[cryptography]==3.3.0
