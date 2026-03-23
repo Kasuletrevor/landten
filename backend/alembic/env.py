@@ -29,6 +29,7 @@ config = context.config
 
 # Set the database URL from settings
 config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+is_sqlite = settings.DATABASE_URL.startswith("sqlite")
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
@@ -57,7 +58,7 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
-        render_as_batch=True,  # Required for SQLite ALTER TABLE support
+        render_as_batch=is_sqlite,  # Required for SQLite ALTER TABLE support
     )
 
     with context.begin_transaction():
@@ -81,7 +82,7 @@ def run_migrations_online() -> None:
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
-            render_as_batch=True,  # Required for SQLite ALTER TABLE support
+            render_as_batch=is_sqlite,  # Required for SQLite ALTER TABLE support
         )
 
         with context.begin_transaction():

@@ -10,6 +10,7 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 import sqlmodel
 
 
@@ -18,6 +19,12 @@ revision: str = "18bf506932ee"
 down_revision: Union[str, None] = "c1f8b6a3d9e2"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
+
+
+def _drop_postgres_enum(name: str) -> None:
+    bind = op.get_bind()
+    if bind.dialect.name == "postgresql":
+        postgresql.ENUM(name=name).drop(bind, checkfirst=True)
 
 
 def upgrade() -> None:
@@ -83,4 +90,5 @@ def downgrade() -> None:
         batch_op.drop_index(batch_op.f("ix_lease_agreements_property_id"))
 
     op.drop_table("lease_agreements")
+    _drop_postgres_enum("leasestatus")
     # ### end Alembic commands ###
