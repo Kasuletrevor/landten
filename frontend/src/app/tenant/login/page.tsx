@@ -17,7 +17,8 @@ export default function TenantLoginPage() {
     setIsLoading(true);
 
     try {
-      await api.tenantLogin(email, password);
+      const response = await api.tenantLogin(email, password);
+      api.setToken(response.access_token);
       // Force a full reload so AuthContext rehydrates userType as tenant.
       window.location.href = "/tenant/dashboard";
     } catch (err) {

@@ -175,6 +175,9 @@ async def create_tenant(
         name=tenant_data.name,
         email=tenant_data.email,
         phone=tenant_data.phone,
+        password_hash=get_password_hash(tenant_data.password)
+        if tenant_data.password
+        else None,
         move_in_date=tenant_data.move_in_date,
         notes=tenant_data.notes,
     )

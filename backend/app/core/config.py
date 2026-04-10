@@ -14,8 +14,10 @@ def _read_secret_file(path_value: str) -> str:
 
 
 def _resolve_secret(value: str, file_path: str) -> str:
-    if file_path:
-        return _read_secret_file(file_path)
+    if file_path and file_path.strip():
+        p = Path(file_path).expanduser()
+        if p.is_file():
+            return _read_secret_file(file_path)
     return value
 
 
