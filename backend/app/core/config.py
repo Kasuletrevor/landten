@@ -1,9 +1,18 @@
 from functools import lru_cache
+import os
 from pathlib import Path
 
+from dotenv import dotenv_values
 from pydantic_settings import BaseSettings
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
+_ENV_FILE = BACKEND_DIR / ".env"
+
+# Load .env values and patch OS env vars.
+# The project .env is the source of truth for local development.
+# Production deployments should set env vars explicitly.
+for key, value in dotenv_values(_ENV_FILE).items():
+    os.environ[key] = value
 
 
 def _read_secret_file(path_value: str) -> str:
@@ -37,7 +46,7 @@ class Settings(BaseSettings):
     MAIL_USERNAME_FILE: str = ""
     MAIL_PASSWORD: str = ""
     MAIL_PASSWORD_FILE: str = ""
-    MAIL_PORT: int = 465
+    MAIL_PORT: int = 587
     MAIL_FROM: str = ""
     MAIL_FROM_FILE: str = ""
 
@@ -56,7 +65,6 @@ class Settings(BaseSettings):
         self.MAIL_FROM = _resolve_secret(self.MAIL_FROM, self.MAIL_FROM_FILE)
 
     class Config:
-        env_file = ".env"
         extra = "ignore"
 
 

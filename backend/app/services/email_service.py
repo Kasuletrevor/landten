@@ -122,7 +122,8 @@ async def send_email(
             port=settings.MAIL_PORT,
             username=settings.MAIL_USERNAME,
             password=settings.MAIL_PASSWORD,
-            use_tls=True,  # Gmail requires TLS on port 465
+            use_tls=settings.MAIL_PORT == 465,
+            start_tls=settings.MAIL_PORT == 587,
         )
 
         logger.info(f"Email sent successfully to {to_email}")
