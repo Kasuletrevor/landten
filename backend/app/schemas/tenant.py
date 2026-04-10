@@ -10,6 +10,7 @@ class TenantCreate(BaseModel):
     name: str
     email: Optional[EmailStr] = None
     phone: Optional[str] = None
+    password: Optional[str] = None  # Sets portal password directly
     move_in_date: date
     notes: Optional[str] = None
 

@@ -9,26 +9,38 @@ interface ApiError {
   detail: string;
 }
 
+const TOKEN_KEY = "landten_access_token";
+
 class ApiClient {
-  setToken(_token: string | null) {
-    // Cookie-based auth is the source of truth.
-    // Keep this method for backward compatibility and to clear legacy storage.
-    void _token;
+  private _token: string | null = null;
+
+  setToken(token: string | null) {
+    this._token = token;
     if (typeof window !== "undefined") {
-      localStorage.removeItem("landten_token");
+      if (token) {
+        localStorage.setItem(TOKEN_KEY, token);
+      } else {
+        localStorage.removeItem(TOKEN_KEY);
+      }
     }
   }
 
   getToken(): string | null {
-    return null;
+    if (this._token) return this._token;
+    if (typeof window !== "undefined") {
+      this._token = localStorage.getItem(TOKEN_KEY);
+    }
+    return this._token;
   }
 
   private async request<T>(
     endpoint: string,
     options: RequestInit = {}
   ): Promise<T> {
+    const token = this.getToken();
     const headers: HeadersInit = {
       "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(options.headers || {}),
     };
 
