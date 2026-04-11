@@ -40,7 +40,7 @@ export default function TenantDashboardPage() {
   const [uploadPayment, setUploadPayment] = useState<Payment | null>(null);
   const [disputePayment, setDisputePayment] = useState<Payment | null>(null);
 
-  const normalizeStatus = (status: PaymentStatus) => String(status).toUpperCase();
+  const normalizeStatus = (status: PaymentStatus) => String(status).toLowerCase();
 
   const loadData = useCallback(async () => {
     try {
@@ -91,13 +91,13 @@ export default function TenantDashboardPage() {
   };
 
   const statusConfig: Record<PaymentStatus, { class: string; label: string; icon: typeof Clock }> = {
-    UPCOMING: { class: "badge-info", label: "Upcoming", icon: Clock },
-    PENDING: { class: "badge-warning", label: "Pending", icon: Clock },
-    ON_TIME: { class: "badge-success", label: "Paid", icon: CheckCircle },
-    LATE: { class: "badge-warning", label: "Late", icon: AlertTriangle },
-    OVERDUE: { class: "badge-error", label: "Overdue", icon: AlertTriangle },
-    WAIVED: { class: "badge-neutral", label: "Waived", icon: Ban },
-    VERIFYING: { class: "badge-info", label: "Verifying", icon: Clock },
+    upcoming: { class: "badge-info", label: "Upcoming", icon: Clock },
+    pending: { class: "badge-warning", label: "Pending", icon: Clock },
+    on_time: { class: "badge-success", label: "Paid", icon: CheckCircle },
+    late: { class: "badge-warning", label: "Late", icon: AlertTriangle },
+    overdue: { class: "badge-error", label: "Overdue", icon: AlertTriangle },
+    waived: { class: "badge-neutral", label: "Waived", icon: Ban },
+    verifying: { class: "badge-info", label: "Verifying", icon: Clock },
   };
 
   if (isLoading) {
@@ -250,22 +250,22 @@ export default function TenantDashboardPage() {
                       const normalizedStatus = normalizeStatus(payment.status);
                       const status =
                         statusConfig[normalizedStatus as keyof typeof statusConfig] ||
-                        statusConfig.PENDING;
+                        statusConfig.pending;
                       return (
                          <div key={payment.id} className="p-4 sm:p-6 hover:bg-[var(--surface-inset)] transition-colors">
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                                <div className="flex items-start gap-4">
                                   <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
-                                     normalizedStatus === "ON_TIME" || normalizedStatus === "LATE"
+                                     normalizedStatus === "on_time" || normalizedStatus === "late"
                                        ? "bg-[var(--success-light)]"
-                                       : normalizedStatus === "OVERDUE"
+                                       : normalizedStatus === "overdue"
                                        ? "bg-[var(--error-light)]"
                                        : "bg-[var(--warning-light)]"
                                   }`}>
                                      <status.icon className={`w-5 h-5 ${
-                                        normalizedStatus === "ON_TIME" || normalizedStatus === "LATE"
+                                        normalizedStatus === "on_time" || normalizedStatus === "late"
                                           ? "text-[var(--success)]"
-                                          : normalizedStatus === "OVERDUE"
+                                          : normalizedStatus === "overdue"
                                           ? "text-[var(--error)]"
                                           : "text-[var(--warning)]"
                                      }`} />
@@ -294,12 +294,12 @@ export default function TenantDashboardPage() {
                                </div>
                                
                                 {/* Upload Receipt Action */}
-                                {(normalizedStatus === "PENDING" || normalizedStatus === "OVERDUE" || normalizedStatus === "UPCOMING" || normalizedStatus === "VERIFYING") && (
+                                {(normalizedStatus === "pending" || normalizedStatus === "overdue" || normalizedStatus === "upcoming" || normalizedStatus === "verifying") && (
                                   <button
                                     onClick={() => setUploadPayment(payment)}
-                                    className={`btn btn-sm ${normalizedStatus === "VERIFYING" ? "btn-secondary" : payment.rejection_reason ? "btn-danger" : "btn-primary"}`}
+                                    className={`btn btn-sm ${normalizedStatus === "verifying" ? "btn-secondary" : payment.rejection_reason ? "btn-danger" : "btn-primary"}`}
                                   >
-                                     {normalizedStatus === "VERIFYING" ? "Update Receipt" : payment.rejection_reason ? "Upload New Receipt" : "Upload Receipt"}
+                                     {normalizedStatus === "verifying" ? "Update Receipt" : payment.rejection_reason ? "Upload New Receipt" : "Upload Receipt"}
                                   </button>
                                 )}
                                 <button

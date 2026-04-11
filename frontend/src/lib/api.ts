@@ -411,7 +411,7 @@ class ApiClient {
       start_date: string;
     }
   ) {
-    return this.request<PaymentSchedule>(`/tenants/${tenantId}/payment-schedule`, {
+    return this.request<PaymentSchedule>(`/tenants/${tenantId}/schedule`, {
       method: "POST",
       body: JSON.stringify(data),
     });
@@ -421,7 +421,7 @@ class ApiClient {
     tenantId: string,
     data: { amount?: number; frequency?: string; due_day?: number; window_days?: number }
   ) {
-    return this.request<PaymentSchedule>(`/tenants/${tenantId}/payment-schedule`, {
+    return this.request<PaymentSchedule>(`/tenants/${tenantId}/schedule`, {
       method: "PUT",
       body: JSON.stringify(data),
     });
@@ -1113,13 +1113,13 @@ export interface PaymentSchedule {
 }
 
 export type PaymentStatus =
-  | "UPCOMING"
-  | "PENDING"
-  | "ON_TIME"
-  | "LATE"
-  | "OVERDUE"
-  | "WAIVED"
-  | "VERIFYING";
+  | "upcoming"
+  | "pending"
+  | "on_time"
+  | "late"
+  | "overdue"
+  | "waived"
+  | "verifying";
 
 export type DisputeStatus = "open" | "resolved" | "OPEN" | "RESOLVED";
 export type DisputeActorType = "landlord" | "tenant" | "system";
@@ -1148,9 +1148,6 @@ export interface Payment {
 }
 
 export interface PaymentWithTenant extends Payment {
-  tenant?: Tenant;
-  room?: Room;
-  property?: Property;
   tenant_name?: string;
   tenant_email?: string;
   tenant_phone?: string;

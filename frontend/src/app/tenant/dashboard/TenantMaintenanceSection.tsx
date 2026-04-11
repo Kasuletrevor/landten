@@ -246,7 +246,7 @@ export default function TenantMaintenanceSection() {
             Report issues, follow repair progress, and confirm fixes.
           </p>
         </div>
-        <button className="btn btn-primary" onClick={() => setIsCreateModalOpen(true)}>
+        <button type="button" className="btn btn-primary" onClick={() => setIsCreateModalOpen(true)}>
           <Plus className="w-4 h-4" />
           New Request
         </button>

@@ -73,12 +73,15 @@ export default function PaymentsPage() {
     void loadData();
   }, [loadData]);
 
-  const filteredPayments = payments.filter(
-    (payment) =>
-      payment.tenant?.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      payment.property?.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      payment.room?.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredPayments = payments.filter((payment) => {
+    if (!searchQuery) return true;
+    const q = searchQuery.toLowerCase();
+    return (
+      payment.tenant_name?.toLowerCase().includes(q) ||
+      payment.property_name?.toLowerCase().includes(q) ||
+      payment.room_name?.toLowerCase().includes(q)
+    );
+  });
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("en-US", {
@@ -97,13 +100,13 @@ export default function PaymentsPage() {
   };
 
   const statusConfig: Record<PaymentStatus, { class: string; label: string; icon: typeof Clock }> = {
-    UPCOMING: { class: "badge-info", label: "Upcoming", icon: Clock },
-    PENDING: { class: "badge-warning", label: "Pending", icon: Clock },
-    ON_TIME: { class: "badge-success", label: "Paid", icon: CheckCircle },
-    LATE: { class: "badge-warning", label: "Late", icon: AlertTriangle },
-    OVERDUE: { class: "badge-error", label: "Overdue", icon: AlertTriangle },
-    WAIVED: { class: "badge-neutral", label: "Waived", icon: Ban },
-    VERIFYING: { class: "badge-info", label: "Verifying", icon: FileSearch },
+    upcoming: { class: "badge-info", label: "Upcoming", icon: Clock },
+    pending: { class: "badge-warning", label: "Pending", icon: Clock },
+    on_time: { class: "badge-success", label: "Paid", icon: CheckCircle },
+    late: { class: "badge-warning", label: "Late", icon: AlertTriangle },
+    overdue: { class: "badge-error", label: "Overdue", icon: AlertTriangle },
+    waived: { class: "badge-neutral", label: "Waived", icon: Ban },
+    verifying: { class: "badge-info", label: "Verifying", icon: FileSearch },
   };
 
   if (isLoading) {
@@ -203,10 +206,10 @@ export default function PaymentsPage() {
       {/* Quick Stats Row */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
         {[
-          { label: "Upcoming", count: summary?.upcoming_count || 0, status: "UPCOMING" },
-          { label: "Pending", count: summary?.pending_count || 0, status: "PENDING" },
-          { label: "Overdue", count: summary?.overdue_count || 0, status: "OVERDUE" },
-          { label: "Paid", count: summary?.paid_count || 0, status: "ON_TIME" },
+          { label: "Upcoming", count: summary?.upcoming_count || 0, status: "upcoming" },
+          { label: "Pending", count: summary?.pending_count || 0, status: "pending" },
+          { label: "Overdue", count: summary?.overdue_count || 0, status: "overdue" },
+          { label: "Paid", count: summary?.paid_count || 0, status: "on_time" },
         ].map((item) => (
           <button
             key={item.label}
@@ -267,12 +270,13 @@ export default function PaymentsPage() {
                 className="input appearance-none cursor-pointer"
               >
                 <option value="">All Statuses</option>
-                <option value="UPCOMING">Upcoming</option>
-                <option value="PENDING">Pending</option>
-                <option value="ON_TIME">Paid</option>
-                <option value="LATE">Late</option>
-                <option value="OVERDUE">Overdue</option>
-                <option value="WAIVED">Waived</option>
+                <option value="upcoming">Upcoming</option>
+                <option value="pending">Pending</option>
+                <option value="on_time">Paid</option>
+                <option value="late">Late</option>
+                <option value="overdue">Overdue</option>
+                <option value="waived">Waived</option>
+                <option value="verifying">Verifying</option>
               </select>
             </div>
           </div>
@@ -340,8 +344,8 @@ export default function PaymentsPage() {
         <div className="card overflow-hidden animate-slide-up stagger-3">
           <div className="md:hidden divide-y divide-[var(--border)]">
             {filteredPayments.map((payment, i) => {
-              const status = statusConfig[payment.status] || statusConfig.PENDING;
-              const isPending = ["UPCOMING", "PENDING", "OVERDUE"].includes(payment.status);
+              const status = statusConfig[payment.status] || statusConfig.pending;
+              const isPending = ["upcoming", "pending", "overdue"].includes(payment.status);
 
               return (
                 <div
@@ -351,9 +355,9 @@ export default function PaymentsPage() {
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <p className="font-semibold truncate">{payment.tenant?.name || "Unknown"}</p>
+                      <p className="font-semibold truncate">{payment.tenant_name || "Unknown"}</p>
                       <p className="text-xs text-[var(--text-muted)] truncate">
-                        {payment.property?.name} • {payment.room?.name}
+                        {payment.property_name} • {payment.room_name}
                       </p>
                     </div>
                     <span className={`badge ${status.class} flex-shrink-0`}>{status.label}</span>
@@ -412,7 +416,7 @@ export default function PaymentsPage() {
                           <Ban className="w-4 h-4" />
                           Waive
                         </button>
-                        {payment.status === "OVERDUE" && (
+                        {payment.status === "overdue" && (
                           <button
                             onClick={() => setSendReminderPayment(payment)}
                             className="btn btn-ghost min-h-11 col-span-2"
@@ -424,7 +428,7 @@ export default function PaymentsPage() {
                         )}
                       </>
                     )}
-                    {payment.status === "VERIFYING" && (
+                    {payment.status === "verifying" && (
                       <>
                         <button
                           onClick={() => setMarkPaidPayment(payment)}
@@ -490,15 +494,15 @@ export default function PaymentsPage() {
                       <td>
                         <div className="flex items-center gap-3">
                           <div className="avatar avatar-sm avatar-primary">
-                            {payment.tenant?.name?.charAt(0).toUpperCase() || "?"}
+                            {payment.tenant_name?.charAt(0).toUpperCase() || "?"}
                           </div>
-                          <span className="font-medium">{payment.tenant?.name || "Unknown"}</span>
+                          <span className="font-medium">{payment.tenant_name || "Unknown"}</span>
                         </div>
                       </td>
                       <td>
                         <div className="text-sm">
-                          <p className="font-medium">{payment.property?.name}</p>
-                          <p className="text-[var(--text-muted)]">{payment.room?.name}</p>
+                          <p className="font-medium">{payment.property_name}</p>
+                          <p className="text-[var(--text-muted)]">{payment.room_name}</p>
                         </div>
                       </td>
                       <td>
@@ -552,7 +556,7 @@ export default function PaymentsPage() {
                               >
                                 <Ban className="w-4 h-4" />
                               </button>
-                              {payment.status === "OVERDUE" && (
+                              {payment.status === "overdue" && (
                                 <button
                                   onClick={() => setSendReminderPayment(payment)}
                                   className="btn btn-sm btn-ghost text-[var(--warning)] min-h-11 min-w-11"
@@ -563,7 +567,7 @@ export default function PaymentsPage() {
                               )}
                             </>
                           )}
-                          {payment.status === "VERIFYING" && (
+                          {payment.status === "verifying" && (
                             <>
                               <button
                                 onClick={() => setMarkPaidPayment(payment)}
@@ -668,19 +672,28 @@ export default function PaymentsPage() {
         isOpen={exportModalOpen}
         onClose={() => setExportModalOpen(false)}
         properties={properties}
-        tenants={payments.map((p) => ({
-          id: p.tenant?.id || "",
-          name: p.tenant?.name || "Unknown",
-          email: p.tenant?.email || "",
-          phone: p.tenant?.phone || "",
-          property: { id: p.property?.id || "", name: p.property?.name || "Unknown" },
-          room: { id: p.room?.id || "", name: p.room?.name || "Unknown" },
-          is_active: true,
-          move_in_date: "",
-          total_payments: 0,
-          total_paid: 0,
-          total_outstanding: 0,
-        }))}
+        tenants={Array.from(
+          new Map(
+            payments
+              .filter((p): p is typeof p & { tenant_name: string } => !!p.tenant_name)
+              .map((p) => [
+                p.tenant_name,
+                {
+                  id: p.tenant_name,
+                  name: p.tenant_name,
+                  email: p.tenant_email || "",
+                  phone: p.tenant_phone || "",
+                  property: { id: p.property_id || "", name: p.property_name || "Unknown" },
+                  room: { id: "", name: p.room_name || "Unknown" },
+                  is_active: true,
+                  move_in_date: "",
+                  total_payments: 0,
+                  total_paid: 0,
+                  total_outstanding: 0,
+                },
+              ])
+          ).values()
+        )}
       />
     </div>
   );
@@ -758,12 +771,12 @@ function MarkPaidModal({
             <div className="p-4 bg-[var(--surface-inset)] rounded-xl mb-6">
               <div className="flex items-center gap-3 mb-3">
                 <div className="avatar avatar-md avatar-primary">
-                  {payment.tenant?.name?.charAt(0).toUpperCase() || "?"}
+                  {payment.tenant_name?.charAt(0).toUpperCase() || "?"}
                 </div>
                 <div>
-                  <p className="font-semibold">{payment.tenant?.name}</p>
+                  <p className="font-semibold">{payment.tenant_name}</p>
                   <p className="text-sm text-[var(--text-muted)]">
-                    {payment.property?.name} — {payment.room?.name}
+                    {payment.property_name} — {payment.room_name}
                   </p>
                 </div>
               </div>
@@ -974,7 +987,7 @@ function SendReminderModal({
     }
   };
 
-  const hasEmail = !!payment.tenant?.email;
+  const hasEmail = !!payment.tenant_email;
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -1006,7 +1019,7 @@ function SendReminderModal({
           ) : (
             <>
               <p className="text-[var(--text-secondary)] mb-6">
-                Send a payment reminder to <strong>{payment.tenant?.name}</strong> for the overdue
+                Send a payment reminder to <strong>{payment.tenant_name}</strong> for the overdue
                 payment.
               </p>
 
@@ -1042,7 +1055,7 @@ function SendReminderModal({
                   <div className="flex-1">
                     <p className="font-medium">Email</p>
                     <p className="text-sm text-[var(--text-muted)]">
-                      {hasEmail ? payment.tenant?.email : "No email on file"}
+                      {hasEmail ? payment.tenant_email : "No email on file"}
                     </p>
                   </div>
                 </label>

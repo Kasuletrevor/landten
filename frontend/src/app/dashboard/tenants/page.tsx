@@ -248,12 +248,13 @@ function TenantCard({
 
   const statusBadge = (status: string) => {
     const badges: Record<string, { class: string; label: string }> = {
-      UPCOMING: { class: "badge-info", label: "Upcoming" },
-      PENDING: { class: "badge-warning", label: "Pending" },
-      ON_TIME: { class: "badge-success", label: "Paid" },
-      LATE: { class: "badge-warning", label: "Late" },
-      OVERDUE: { class: "badge-error", label: "Overdue" },
-      WAIVED: { class: "badge-neutral", label: "Waived" },
+      upcoming: { class: "badge-info", label: "Upcoming" },
+      pending: { class: "badge-warning", label: "Pending" },
+      on_time: { class: "badge-success", label: "Paid" },
+      late: { class: "badge-warning", label: "Late" },
+      overdue: { class: "badge-error", label: "Overdue" },
+      waived: { class: "badge-neutral", label: "Waived" },
+      verifying: { class: "badge-info", label: "Verifying" },
     };
     return badges[status] || { class: "badge-neutral", label: status };
   };

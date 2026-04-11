@@ -420,9 +420,10 @@ async def get_payment_summary(
     upcoming = 0
     pending = 0
     overdue = 0
-    paid_this_month = 0
-    amount_collected = 0.0
-    amount_outstanding = 0.0
+    paid_count = 0
+    total_expected = 0
+    total_received = 0
+    total_outstanding = 0
 
     for payment in payments:
         # Update status
@@ -434,27 +435,33 @@ async def get_payment_summary(
 
         if payment.status == PaymentStatus.UPCOMING:
             upcoming += 1
-            amount_outstanding += payment.amount_due
+            total_expected += 1
+            total_outstanding += 1
         elif payment.status == PaymentStatus.PENDING:
             pending += 1
-            amount_outstanding += payment.amount_due
+            total_expected += 1
+            total_outstanding += 1
         elif payment.status == PaymentStatus.OVERDUE:
             overdue += 1
-            amount_outstanding += payment.amount_due
+            total_expected += 1
+            total_outstanding += 1
         elif payment.status in [PaymentStatus.ON_TIME, PaymentStatus.LATE]:
-            if payment.paid_date and payment.paid_date >= first_of_month:
-                paid_this_month += 1
-                amount_collected += payment.amount_due
+            paid_count += 1
+            total_received += 1
+            if payment.status == PaymentStatus.LATE:
+                total_expected += 1
 
     session.commit()
 
     return PaymentSummary(
-        total_upcoming=upcoming,
-        total_pending=pending,
+        total_expected=total_expected,
+        total_received=total_received,
+        total_outstanding=total_outstanding,
         total_overdue=overdue,
-        total_paid_this_month=paid_this_month,
-        amount_collected_this_month=amount_collected,
-        amount_outstanding=amount_outstanding,
+        upcoming_count=upcoming,
+        pending_count=pending,
+        overdue_count=overdue,
+        paid_count=paid_count,
     )
 
 
