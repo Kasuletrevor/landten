@@ -36,3 +36,7 @@ node_modules/
 # Logs
 *.log
 npm-debug.log*
+
+# AI agent artifacts
+.qwen/
+output/
