@@ -90,12 +90,14 @@ class PaymentListResponse(BaseModel):
 class PaymentSummary(BaseModel):
     """Summary statistics for dashboard"""
 
-    total_upcoming: int = 0
-    total_pending: int = 0
+    total_expected: int = 0
+    total_received: int = 0
+    total_outstanding: int = 0
     total_overdue: int = 0
-    total_paid_this_month: int = 0
-    amount_collected_this_month: float = 0.0
-    amount_outstanding: float = 0.0
+    upcoming_count: int = 0
+    pending_count: int = 0
+    overdue_count: int = 0
+    paid_count: int = 0
 
 
 class PaymentDisputeMessageCreate(BaseModel):

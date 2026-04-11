@@ -15,9 +15,10 @@ class TenantCreate(BaseModel):
     notes: Optional[str] = None
 
     # Payment schedule options
-    # If auto_create_schedule is True (default), creates schedule using room rent
+    # If auto_create_schedule is True, creates schedule using room rent
     # If payment_amount is provided, uses that instead of room rent
-    auto_create_schedule: bool = True
+    # Default is False so the frontend can create schedules via Step 2 of the modal
+    auto_create_schedule: bool = False
     payment_amount: Optional[float] = None  # Override room rent if provided
     payment_frequency: Optional[PaymentFrequency] = PaymentFrequency.MONTHLY
     payment_due_day: Optional[int] = 1  # 1st of month (standard)

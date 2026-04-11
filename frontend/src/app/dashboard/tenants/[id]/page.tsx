@@ -72,13 +72,13 @@ export default function TenantDetailPage() {
   };
 
   const statusConfig: Record<PaymentStatus, { class: string; label: string; icon: typeof Clock }> = {
-    UPCOMING: { class: "badge-info", label: "Upcoming", icon: Clock },
-    PENDING: { class: "badge-warning", label: "Pending", icon: Clock },
-    ON_TIME: { class: "badge-success", label: "Paid", icon: CheckCircle },
-    LATE: { class: "badge-warning", label: "Late", icon: AlertTriangle },
-    OVERDUE: { class: "badge-error", label: "Overdue", icon: AlertTriangle },
-    WAIVED: { class: "badge-neutral", label: "Waived", icon: Ban },
-    VERIFYING: { class: "badge-info", label: "Verifying", icon: FileSearch },
+    upcoming: { class: "badge-info", label: "Upcoming", icon: Clock },
+    pending: { class: "badge-warning", label: "Pending", icon: Clock },
+    on_time: { class: "badge-success", label: "Paid", icon: CheckCircle },
+    late: { class: "badge-warning", label: "Late", icon: AlertTriangle },
+    overdue: { class: "badge-error", label: "Overdue", icon: AlertTriangle },
+    waived: { class: "badge-neutral", label: "Waived", icon: Ban },
+    verifying: { class: "badge-info", label: "Verifying", icon: FileSearch },
   };
 
   if (isLoading) {
@@ -109,10 +109,10 @@ export default function TenantDetailPage() {
   }
 
   // Calculate payment stats
-  const paidPayments = tenant.payments.filter((p) => p.status === "ON_TIME" || p.status === "LATE").length;
-  const overduePayments = tenant.payments.filter((p) => p.status === "OVERDUE").length;
+  const paidPayments = tenant.payments.filter((p) => p.status === "on_time" || p.status === "late").length;
+  const overduePayments = tenant.payments.filter((p) => p.status === "overdue").length;
   const totalPaid = tenant.payments
-    .filter((p) => p.status === "ON_TIME" || p.status === "LATE")
+    .filter((p) => p.status === "on_time" || p.status === "late")
     .reduce((sum, p) => sum + p.amount_due, 0);
 
   return (
@@ -398,22 +398,22 @@ export default function TenantDetailPage() {
                         <div className="flex items-center gap-4">
                           <div
                             className={`w-10 h-10 rounded-xl flex items-center justify-center ${
-                              payment.status === "ON_TIME" || payment.status === "LATE"
+                              payment.status === "on_time" || payment.status === "late"
                                 ? "bg-[var(--success-light)]"
-                                : payment.status === "OVERDUE"
+                                : payment.status === "overdue"
                                 ? "bg-[var(--error-light)]"
-                                : payment.status === "WAIVED"
+                                : payment.status === "waived"
                                 ? "bg-[var(--surface-inset)]"
                                 : "bg-[var(--warning-light)]"
                             }`}
                           >
                             <status.icon
                               className={`w-5 h-5 ${
-                                payment.status === "ON_TIME" || payment.status === "LATE"
+                                payment.status === "on_time" || payment.status === "late"
                                   ? "text-[var(--success)]"
-                                  : payment.status === "OVERDUE"
+                                  : payment.status === "overdue"
                                   ? "text-[var(--error)]"
-                                  : payment.status === "WAIVED"
+                                  : payment.status === "waived"
                                   ? "text-[var(--text-muted)]"
                                   : "text-[var(--warning)]"
                               }`}

@@ -437,15 +437,15 @@ export default function DashboardPage() {
                 <div key={payment.id} className="p-4 flex items-center gap-4">
                   <div className="w-10 h-10 rounded-full bg-[var(--error-light)] flex items-center justify-center">
                     <span className="text-sm font-medium text-[var(--error)]">
-                      {payment.tenant?.name?.charAt(0).toUpperCase() || "?"}
+                      {payment.tenant_name?.charAt(0).toUpperCase() || "?"}
                     </span>
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-sm truncate">
-                      {payment.tenant?.name || "Unknown"}
+                      {payment.tenant_name || "Unknown"}
                     </p>
                     <p className="text-xs text-[var(--text-muted)]">
-                      {payment.property?.name} · Due {formatDate(payment.due_date)}
+                      {payment.property_name} · Due {formatDate(payment.due_date)}
                     </p>
                   </div>
                   <div className="text-right">
@@ -496,15 +496,15 @@ export default function DashboardPage() {
                 <div key={payment.id} className="p-4 flex items-center gap-4">
                   <div className="w-10 h-10 rounded-full bg-[var(--primary-100)] flex items-center justify-center">
                     <span className="text-sm font-medium text-[var(--primary-600)]">
-                      {payment.tenant?.name?.charAt(0).toUpperCase() || "?"}
+                      {payment.tenant_name?.charAt(0).toUpperCase() || "?"}
                     </span>
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-sm truncate">
-                      {payment.tenant?.name || "Unknown"}
+                      {payment.tenant_name || "Unknown"}
                     </p>
                     <p className="text-xs text-[var(--text-muted)]">
-                      {payment.property?.name} · Due {formatDate(payment.due_date)}
+                      {payment.property_name} · Due {formatDate(payment.due_date)}
                     </p>
                   </div>
                   <div className="text-right">
