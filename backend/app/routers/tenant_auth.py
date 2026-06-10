@@ -13,6 +13,7 @@ from fastapi import (
     UploadFile,
     File,
     Form,
+    Query,
 )
 from fastapi.responses import StreamingResponse
 from sqlmodel import Session, select
@@ -37,6 +38,7 @@ from app.models.room import Room
 from app.models.property import Property
 from app.models.landlord import Landlord
 from app.models.notification import Notification, NotificationType
+from app.models.tenant_notification import TenantNotification, TenantNotificationType
 from app.models.payment_dispute import DisputeActorType
 from app.models.maintenance import (
     MaintenanceAuthorType,
@@ -75,6 +77,10 @@ from app.schemas.maintenance import (
     MaintenanceRequestListResponse,
     MaintenanceRequestResponse,
     MaintenanceResolveRequest,
+)
+from app.schemas.tenant_notification import (
+    TenantNotificationListResponse,
+    TenantNotificationResponse,
 )
 
 router = APIRouter(prefix="/tenant-auth", tags=["Tenant Authentication"])
@@ -987,3 +993,111 @@ async def reopen_tenant_maintenance_request(
     return build_maintenance_response(
         session, maintenance_request, viewer_type="tenant", include_comments=True
     )
+
+
+# =============================================================================
+# Tenant Notifications
+# =============================================================================
+
+@router.get("/notifications", response_model=TenantNotificationListResponse)
+async def list_tenant_notifications(
+    unread_only: bool = False,
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    current_tenant: Tenant = Depends(get_current_tenant),
+    session: Session = Depends(get_session),
+):
+    """
+    List persistent notifications for the current tenant.
+    """
+    query = select(TenantNotification).where(
+        TenantNotification.tenant_id == current_tenant.id
+    )
+
+    if unread_only:
+        query = query.where(TenantNotification.is_read == False)
+
+    query = query.order_by(TenantNotification.created_at.desc()).offset(offset).limit(limit)
+    notifications = session.exec(query).all()
+
+    # Get total count
+    total_query = select(TenantNotification).where(
+        TenantNotification.tenant_id == current_tenant.id
+    )
+    total = len(session.exec(total_query).all())
+
+    # Get unread count
+    unread_query = select(TenantNotification).where(
+        TenantNotification.tenant_id == current_tenant.id,
+        TenantNotification.is_read == False,
+    )
+    unread_count = len(session.exec(unread_query).all())
+
+    return TenantNotificationListResponse(
+        notifications=[TenantNotificationResponse.model_validate(n) for n in notifications],
+        total=total,
+        unread_count=unread_count,
+    )
+
+
+@router.get("/notifications/unread-count")
+async def get_tenant_unread_count(
+    current_tenant: Tenant = Depends(get_current_tenant),
+    session: Session = Depends(get_session),
+):
+    """
+    Get the number of unread notifications for the current tenant.
+    """
+    unread_query = select(TenantNotification).where(
+        TenantNotification.tenant_id == current_tenant.id,
+        TenantNotification.is_read == False,
+    )
+    unread_count = len(session.exec(unread_query).all())
+    return {"unread_count": unread_count}
+
+
+@router.put("/notifications/{notification_id}/read")
+async def mark_tenant_notification_read(
+    notification_id: str,
+    current_tenant: Tenant = Depends(get_current_tenant),
+    session: Session = Depends(get_session),
+):
+    """
+    Mark a tenant notification as read.
+    """
+    notification = session.get(TenantNotification, notification_id)
+    if not notification or notification.tenant_id != current_tenant.id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found"
+        )
+
+    notification.is_read = True
+    session.add(notification)
+    session.commit()
+
+    return {"message": "Notification marked as read"}
+
+
+@router.put("/notifications/read-all")
+async def mark_all_tenant_notifications_read(
+    current_tenant: Tenant = Depends(get_current_tenant),
+    session: Session = Depends(get_session),
+):
+    """
+    Mark all tenant notifications as read.
+    """
+    notifications = session.exec(
+        select(TenantNotification).where(
+            TenantNotification.tenant_id == current_tenant.id,
+            TenantNotification.is_read == False,
+        )
+    ).all()
+
+    for notification in notifications:
+        notification.is_read = True
+        session.add(notification)
+
+    session.commit()
+
+    return {"message": f"Marked {len(notifications)} notifications as read"}
+
