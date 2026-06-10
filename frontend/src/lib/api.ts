@@ -792,6 +792,28 @@ class ApiClient {
     return this.request<DashboardAnalytics>("/analytics/dashboard");
   }
 
+  // Tenant Notifications
+  async getTenantNotifications(params?: { unreadOnly?: boolean; limit?: number; offset?: number }) {
+    const queryParams = new URLSearchParams();
+    if (params?.unreadOnly) queryParams.set("unread_only", "true");
+    if (params?.limit) queryParams.set("limit", params.limit.toString());
+    if (params?.offset) queryParams.set("offset", params.offset.toString());
+    const query = queryParams.toString() ? `?${queryParams.toString()}` : "";
+    return this.request<TenantNotificationListResponse>(`/tenant-auth/notifications${query}`);
+  }
+
+  async getTenantUnreadCount() {
+    return this.request<{ unread_count: number }>("/tenant-auth/notifications/unread-count");
+  }
+
+  async markTenantNotificationRead(id: string) {
+    return this.request<void>(`/tenant-auth/notifications/${id}/read`, { method: "PUT" });
+  }
+
+  async markAllTenantNotificationsRead() {
+    return this.request<void>("/tenant-auth/notifications/read-all", { method: "PUT" });
+  }
+
   // Lease Agreements
   async getLeases(filters?: { property_id?: string; status?: string }) {
     const params = new URLSearchParams();
@@ -1343,6 +1365,35 @@ export interface DashboardAnalytics {
   vacancy_trend: TrendComparison;
   primary_currency: string;
   currency_note: string;
+}
+
+// Tenant Notification Types
+export type TenantNotificationType =
+  | "payment_receipt_rejected"
+  | "payment_dispute_message"
+  | "maintenance_request_updated"
+  | "maintenance_comment_created"
+  | "payment_reminder"
+  | "lease_signed"
+  | "lease_rejected";
+
+export interface TenantNotification {
+  id: string;
+  tenant_id: string;
+  type: TenantNotificationType;
+  title: string;
+  message: string;
+  is_read: boolean;
+  payment_id?: string | null;
+  property_id?: string | null;
+  maintenance_request_id?: string | null;
+  created_at: string;
+}
+
+export interface TenantNotificationListResponse {
+  notifications: TenantNotification[];
+  total: number;
+  unread_count: number;
 }
 
 // Lease Agreement Types

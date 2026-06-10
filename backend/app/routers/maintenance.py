@@ -24,6 +24,7 @@ from app.models.maintenance import (
 )
 from app.models.property import Property
 from app.models.tenant import Tenant
+from app.models.tenant_notification import TenantNotificationType
 from app.schemas.maintenance import (
     MaintenanceCommentCreate,
     MaintenanceRequestListResponse,
@@ -243,11 +244,19 @@ async def update_maintenance_request(
     session.refresh(maintenance_request)
 
     await _run_post_commit_task(
-        "broadcast_maintenance_update_to_tenant",
-        notification_service.broadcast_to_tenant(
-            tenant.id,
-            "maintenance_request_updated",
-            {
+        "persist_and_broadcast_maintenance_update_to_tenant",
+        notification_service.persist_and_broadcast_tenant_notification(
+            session=session,
+            tenant_id=tenant.id,
+            notification_type=TenantNotificationType.MAINTENANCE_REQUEST_UPDATED,
+            title="Maintenance request updated",
+            message=(
+                f"{maintenance_request.title} is now {maintenance_request.status.value.replace('_', ' ')}."
+            ),
+            property_id=property_obj.id if property_obj else None,
+            maintenance_request_id=maintenance_request.id,
+            event_type="maintenance_request_updated",
+            event_data={
                 "request_id": maintenance_request.id,
                 "title": "Maintenance request updated",
                 "message": (
@@ -319,11 +328,17 @@ async def add_maintenance_comment(
 
     if not payload.is_internal:
         await _run_post_commit_task(
-            "broadcast_maintenance_comment_to_tenant",
-            notification_service.broadcast_to_tenant(
-                tenant.id,
-                "maintenance_comment_created",
-                {
+            "persist_and_broadcast_maintenance_comment_to_tenant",
+            notification_service.persist_and_broadcast_tenant_notification(
+                session=session,
+                tenant_id=tenant.id,
+                notification_type=TenantNotificationType.MAINTENANCE_COMMENT_CREATED,
+                title="Landlord commented on your maintenance request",
+                message=body,
+                property_id=property_obj.id if property_obj else None,
+                maintenance_request_id=maintenance_request.id,
+                event_type="maintenance_comment_created",
+                event_data={
                     "request_id": maintenance_request.id,
                     "title": "Landlord commented on your maintenance request",
                     "author_type": "landlord",
@@ -399,11 +414,17 @@ async def add_maintenance_attachment_comment(
     )
     if not is_internal:
         await _run_post_commit_task(
-            "broadcast_maintenance_attachment_to_tenant",
-            notification_service.broadcast_to_tenant(
-                tenant.id,
-                "maintenance_comment_created",
-                {
+            "persist_and_broadcast_maintenance_attachment_to_tenant",
+            notification_service.persist_and_broadcast_tenant_notification(
+                session=session,
+                tenant_id=tenant.id,
+                notification_type=TenantNotificationType.MAINTENANCE_COMMENT_CREATED,
+                title="Landlord shared a maintenance attachment",
+                message=message_body,
+                property_id=property_obj.id if property_obj else None,
+                maintenance_request_id=maintenance_request.id,
+                event_type="maintenance_comment_created",
+                event_data={
                     "request_id": maintenance_request.id,
                     "title": "Landlord shared a maintenance attachment",
                     "author_type": "landlord",

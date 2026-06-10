@@ -5,11 +5,12 @@ In-app notification service using Server-Sent Events (SSE).
 import asyncio
 import json
 import logging
-from typing import Dict, Set, AsyncGenerator
+from typing import Dict, Set, AsyncGenerator, Optional
 from datetime import datetime, timezone
 from sqlmodel import Session
 
 from app.models.notification import Notification, NotificationType
+from app.models.tenant_notification import TenantNotification, TenantNotificationType
 
 
 # Store active SSE connections per landlord.
@@ -308,3 +309,78 @@ def get_active_tenant_connections_count(tenant_id: str) -> int:
     if tenant_id not in _tenant_connections:
         return 0
     return len(_tenant_connections[tenant_id])
+
+
+# =============================================================================
+# Tenant Notification Persistence
+# =============================================================================
+
+async def persist_and_broadcast_tenant_notification(
+    session: Session,
+    tenant_id: str,
+    notification_type: TenantNotificationType,
+    title: str,
+    message: str,
+    payment_id: Optional[str] = None,
+    property_id: Optional[str] = None,
+    maintenance_request_id: Optional[str] = None,
+    event_type: Optional[str] = None,
+    event_data: Optional[dict] = None,
+) -> TenantNotification:
+    """
+    Persist a notification to a tenant's inbox and optionally broadcast via SSE.
+    """
+    notification = TenantNotification(
+        tenant_id=tenant_id,
+        type=notification_type,
+        title=title,
+        message=message,
+        payment_id=payment_id,
+        property_id=property_id,
+        maintenance_request_id=maintenance_request_id,
+    )
+    session.add(notification)
+    session.commit()
+    session.refresh(notification)
+
+    # Broadcast via SSE if connected
+    if event_type and event_data:
+        await broadcast_to_tenant(
+            tenant_id,
+            event_type,
+            {
+                "id": notification.id,
+                **event_data,
+                "created_at": notification.created_at.isoformat(),
+            },
+        )
+
+    return notification
+
+
+async def persist_tenant_notification(
+    session: Session,
+    tenant_id: str,
+    notification_type: TenantNotificationType,
+    title: str,
+    message: str,
+    payment_id: Optional[str] = None,
+    property_id: Optional[str] = None,
+    maintenance_request_id: Optional[str] = None,
+) -> TenantNotification:
+    """
+    Persist a notification to a tenant's inbox without broadcasting.
+    """
+    notification = TenantNotification(
+        tenant_id=tenant_id,
+        type=notification_type,
+        title=title,
+        message=message,
+        payment_id=payment_id,
+        property_id=property_id,
+        maintenance_request_id=maintenance_request_id,
+    )
+    session.add(notification)
+    session.commit()
+    session.refresh(notification)
+    return notification

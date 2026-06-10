@@ -21,6 +21,7 @@ from app.models.tenant import Tenant
 from app.models.payment_schedule import PaymentSchedule, PaymentFrequency
 from app.models.payment import Payment, PaymentStatus
 from app.models.payment_dispute import DisputeActorType, PaymentDisputeMessage
+from app.models.tenant_notification import TenantNotificationType
 from app.services import email_service, notification_service
 from app.services.payment_dispute_service import (
     get_dispute_for_payment,
@@ -814,12 +815,19 @@ async def reject_payment_receipt(
     session.commit()
     session.refresh(payment)
 
+    # Persist notification to tenant inbox
     await _run_post_commit_task(
-        "broadcast_receipt_rejection",
-        notification_service.broadcast_to_tenant(
-            tenant.id,
-            "payment_receipt_rejected",
-            {
+        "persist_receipt_rejection_notification",
+        notification_service.persist_and_broadcast_tenant_notification(
+            session=session,
+            tenant_id=tenant.id,
+            notification_type=TenantNotificationType.PAYMENT_RECEIPT_REJECTED,
+            title="Payment receipt rejected",
+            message=reject_data.reason,
+            payment_id=payment.id,
+            property_id=property_obj.id if property_obj else None,
+            event_type="payment_receipt_rejected",
+            event_data={
                 "title": "Payment receipt rejected",
                 "message": reject_data.reason,
                 "payment_id": payment.id,
@@ -1094,16 +1102,21 @@ async def post_payment_dispute_message(
     )
 
     await _run_post_commit_task(
-        "broadcast_dispute_message_to_tenant",
-        notification_service.broadcast_to_tenant(
-            tenant.id,
-            "payment_dispute_message",
-            {
+        "persist_and_broadcast_dispute_message_to_tenant",
+        notification_service.persist_and_broadcast_tenant_notification(
+            session=session,
+            tenant_id=tenant.id,
+            notification_type=TenantNotificationType.PAYMENT_DISPUTE_MESSAGE,
+            title="Landlord replied on payment discussion",
+            message=body,
+            payment_id=payment.id,
+            property_id=property_obj.id if property_obj else None,
+            event_type="payment_dispute_message",
+            event_data={
                 "title": "Landlord replied on payment discussion",
                 "message": body,
                 "payment_id": payment.id,
                 "author_type": "landlord",
-                "created_at": datetime.now(timezone.utc).isoformat(),
             },
         ),
         payment_id=payment.id,
@@ -1166,18 +1179,23 @@ async def post_payment_dispute_attachment(
     )
 
     await _run_post_commit_task(
-        "broadcast_dispute_attachment_to_tenant",
-        notification_service.broadcast_to_tenant(
-            tenant.id,
-            "payment_dispute_message",
-            {
+        "persist_and_broadcast_dispute_attachment_to_tenant",
+        notification_service.persist_and_broadcast_tenant_notification(
+            session=session,
+            tenant_id=tenant.id,
+            notification_type=TenantNotificationType.PAYMENT_DISPUTE_MESSAGE,
+            title="Landlord shared an attachment",
+            message=message_body,
+            payment_id=payment.id,
+            property_id=property_obj.id if property_obj else None,
+            event_type="payment_dispute_message",
+            event_data={
                 "title": "Landlord shared an attachment",
                 "message": message_body,
                 "payment_id": payment.id,
                 "author_type": "landlord",
                 "attachment_name": attachment_name,
                 "has_attachment": True,
-                "created_at": datetime.now(timezone.utc).isoformat(),
             },
         ),
         payment_id=payment.id,
