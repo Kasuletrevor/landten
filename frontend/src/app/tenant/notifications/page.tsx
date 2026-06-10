@@ -49,8 +49,9 @@ export default function TenantNotificationsPage() {
   const router = useRouter();
   const [notifications, setNotifications] = useState<TenantNotification[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [filter, setFilter] = useState<"all" | "unread">("all");
-  const [searchQuery, setSearchQuery] = useState("");
+const [filter, setFilter] = useState<"all" | "unread">("all");
+const [searchQuery, setSearchQuery] = useState("");
+const [unreadCount, setUnreadCount] = useState(0);
 
   const fetchNotifications = useCallback(async () => {
     setIsLoading(true);
@@ -60,6 +61,7 @@ export default function TenantNotificationsPage() {
         limit: 50,
       });
       setNotifications(response.notifications);
+      setUnreadCount(response.unread_count);
     } catch (error) {
       console.error("Failed to fetch tenant notifications:", error);
     } finally {
@@ -105,8 +107,6 @@ export default function TenantNotificationsPage() {
       n.message.toLowerCase().includes(query)
     );
   });
-
-  const unreadCount = notifications.filter((n) => !n.is_read).length;
 
   return (
     <div className="min-h-screen bg-[var(--background)]">
