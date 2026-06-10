@@ -21,7 +21,8 @@ import {
   FileText,
   Upload,
   Download,
-  Paperclip
+  Paperclip,
+  Bell,
 } from "lucide-react";
 
 export default function TenantDashboardPage() {
@@ -39,6 +40,7 @@ export default function TenantDashboardPage() {
   const [error, setError] = useState("");
   const [uploadPayment, setUploadPayment] = useState<Payment | null>(null);
   const [disputePayment, setDisputePayment] = useState<Payment | null>(null);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   const normalizeStatus = (status: PaymentStatus) => String(status).toLowerCase();
 
@@ -60,9 +62,28 @@ export default function TenantDashboardPage() {
     }
   }, [router]);
 
+  const loadUnreadCount = useCallback(async () => {
+    try {
+      const data = await api.getTenantUnreadCount();
+      setUnreadCount(data.unread_count);
+    } catch (err) {
+      console.error("Failed to load unread count:", err);
+    }
+  }, []);
+
   useEffect(() => {
     void loadData();
-  }, [loadData]);
+    void loadUnreadCount();
+  }, [loadData, loadUnreadCount]);
+
+  useEffect(() => {
+    const unsub = api.subscribeToTenantNotifications((event) => {
+      if (event.type === "payment_receipt_rejected" || event.type === "payment_dispute_message" || event.type === "maintenance_request_updated" || event.type === "maintenance_comment_created") {
+        setUnreadCount((prev) => prev + 1);
+      }
+    });
+    return unsub;
+  }, []);
 
   const handleLogout = async () => {
     await api.tenantLogout().catch(() => {});
@@ -137,6 +158,19 @@ export default function TenantDashboardPage() {
           </span>
         </div>
         <div className="flex items-center gap-4">
+          {/* Notification Bell */}
+          <Link
+            href="/tenant/notifications"
+            className="relative btn btn-ghost p-2 text-[var(--text-muted)] hover:text-[var(--primary-600)]"
+            title="Notifications"
+          >
+            <Bell className="w-5 h-5" />
+            {unreadCount > 0 && (
+              <span className="absolute top-0 right-0 min-w-[18px] h-[18px] px-1 bg-[var(--error)] text-white text-[10px] font-bold rounded-full flex items-center justify-center border-2 border-[var(--surface)]">
+                {unreadCount > 99 ? "99+" : unreadCount}
+              </span>
+            )}
+          </Link>
           <div className="flex items-center gap-3">
              <div className="text-right hidden sm:block">
                 <p className="text-sm font-medium">{tenant.name}</p>
