@@ -288,10 +288,15 @@ export default function PropertyDetailPage() {
           <p className="empty-state-description">
             Add rooms to this property to start managing tenants.
           </p>
-          <button onClick={() => setShowAddRoom(true)} className="btn btn-primary">
-            <Plus className="w-4 h-4" />
-            Add Room
-          </button>
+          <div className="flex flex-col items-center gap-3 mt-2">
+            <button onClick={() => setShowBulkModal(true)} className="btn btn-primary">
+              <Layers className="w-4 h-4" />
+              Create rooms in bulk
+            </button>
+            <button onClick={() => setShowAddRoom(true)} className="text-sm text-[var(--primary-600)] hover:text-[var(--primary-700)] font-medium">
+              Add one room instead
+            </button>
+          </div>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 animate-slide-up stagger-2">
@@ -1280,8 +1285,7 @@ function BulkRoomModal({
                 <div>
                   <p className="font-medium">Some rooms have no price set</p>
                   <p className="text-xs mt-0.5">
-                    Rooms {gaps.map(([f, t]) => (f === t ? f : `${f}-${t}`)).join(", ")}{" "}
-                    will use the default price (first range).
+                    Rooms {gaps.map(([f, t]) => (f === t ? f : `${f}-${t}`)).join(", ")} have no price assigned and will not be created unless you assign a price.
                   </p>
                 </div>
               </div>
