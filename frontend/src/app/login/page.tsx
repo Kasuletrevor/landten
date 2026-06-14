@@ -19,7 +19,6 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const { login } = useAuth();
@@ -122,26 +121,6 @@ export default function LoginPage() {
               {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
             </button>
           </div>
-        </div>
-
-        <div className="flex items-center justify-between">
-          <label className="flex items-center gap-2 cursor-pointer group">
-            <input
-              type="checkbox"
-              checked={rememberMe}
-              onChange={(e) => setRememberMe(e.target.checked)}
-              className="w-4 h-4 rounded border-white/20 bg-white/5 text-[var(--primary-500)] focus:ring-[var(--primary-500)] focus:ring-offset-0"
-            />
-            <span className="text-sm text-[var(--text-secondary)] group-hover:text-white transition-colors">
-              Remember me
-            </span>
-          </label>
-          <Link
-            href="#"
-            className="text-sm font-medium text-[var(--primary-400)] hover:text-[var(--primary-300)] transition-colors"
-          >
-            Forgot password?
-          </Link>
         </div>
 
         <button
