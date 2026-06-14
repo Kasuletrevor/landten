@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import api, { PropertyWithStats, RoomWithTenant } from "@/lib/api";
 import { useToast } from "@/components/toast-provider";
+import { AddTenantModal } from "@/components/modals/AddTenantModal";
 import {
   Building2,
   MapPin,
@@ -51,6 +52,7 @@ export default function PropertyDetailPage() {
   const [editRoom, setEditRoom] = useState<RoomWithTenant | null>(null);
   const [deleteRoom, setDeleteRoom] = useState<RoomWithTenant | null>(null);
   const [showEditProperty, setShowEditProperty] = useState(false);
+  const [addTenantRoomId, setAddTenantRoomId] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     try {
@@ -377,12 +379,12 @@ export default function PropertyDetailPage() {
                   <div className="p-3 border-2 border-dashed border-[var(--border)] rounded-xl text-center">
                     <User className="w-5 h-5 text-[var(--text-muted)] mx-auto mb-1" />
                     <p className="text-sm text-[var(--text-muted)]">Vacant</p>
-                    <Link
-                      href="/dashboard/tenants"
-                      className="text-xs text-[var(--primary-600)] hover:underline"
+                    <button
+                      onClick={() => setAddTenantRoomId(room.id)}
+                      className="text-xs text-[var(--primary-600)] hover:underline mt-1 inline-block"
                     >
                       Add tenant
-                    </Link>
+                    </button>
                   </div>
                 )}
               </div>
@@ -432,6 +434,19 @@ export default function PropertyDetailPage() {
           propertyId={propertyId}
           onClose={() => setShowBulkModal(false)}
           onSave={loadData}
+        />
+      )}
+
+      {/* Add Tenant Modal */}
+      {addTenantRoomId && (
+        <AddTenantModal
+          properties={[property]}
+          initialPropertyId={property.id}
+          initialRoomId={addTenantRoomId}
+          onClose={() => setAddTenantRoomId(null)}
+          onSave={() => {
+            void loadData();
+          }}
         />
       )}
     </div>
