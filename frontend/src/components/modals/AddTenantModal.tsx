@@ -247,7 +247,7 @@ export function AddTenantModal({
                           amount: parseFloat(e.target.value) || 0,
                         }))
                       }
-                      className="input pl-12"
+                      className="input !pl-16"
                       min="0"
                       required
                     />
