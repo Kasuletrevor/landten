@@ -37,6 +37,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Check for existing session on mount
   useEffect(() => {
+    // Skip the probe entirely if there is no token in storage.
+    // This avoids spurious 401s on every page load before the user logs in.
+    if (!api.getToken()) {
+      setIsLoading(false);
+      return;
+    }
+
     // Cookie-backed session restore:
     // first try landlord profile, then tenant profile.
     api.getMe()
