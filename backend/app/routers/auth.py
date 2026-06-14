@@ -34,6 +34,17 @@ def _set_auth_cookie(response: Response, access_token: str) -> None:
         samesite="lax",
         path="/",
     )
+    # Non-HttpOnly presence flag so the frontend can detect a session
+    # without needing to read the HttpOnly token cookie.
+    response.set_cookie(
+        key="landten_session_present",
+        value="1",
+        max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        httponly=False,
+        secure=settings.FRONTEND_URL.startswith("https://"),
+        samesite="lax",
+        path="/",
+    )
 
 
 def _clear_auth_cookie(response: Response) -> None:
@@ -42,6 +53,13 @@ def _clear_auth_cookie(response: Response) -> None:
         path="/",
         secure=settings.FRONTEND_URL.startswith("https://"),
         httponly=True,
+        samesite="lax",
+    )
+    response.delete_cookie(
+        key="landten_session_present",
+        path="/",
+        secure=settings.FRONTEND_URL.startswith("https://"),
+        httponly=False,
         samesite="lax",
     )
 

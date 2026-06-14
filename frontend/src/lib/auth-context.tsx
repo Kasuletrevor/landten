@@ -37,9 +37,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Check for existing session on mount
   useEffect(() => {
-    // Skip the probe entirely if there is no token in storage.
-    // This avoids spurious 401s on every page load before the user logs in.
-    if (!api.getToken()) {
+    // Skip the probe entirely if there is no token in storage AND no
+    // backend-set presence cookie. This avoids spurious 401s on every page
+    // load before the user logs in, while still allowing the cookie-backed
+    // session restore path for users who have a valid HttpOnly cookie
+    // (e.g. after clearing site storage).
+    const hasPresenceCookie =
+      typeof document !== "undefined" &&
+      document.cookie.split("; ").some((c) => c.startsWith("landten_session_present="));
+    if (!api.getToken() && !hasPresenceCookie) {
       setIsLoading(false);
       return;
     }

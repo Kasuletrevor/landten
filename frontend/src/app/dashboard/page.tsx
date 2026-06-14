@@ -119,6 +119,8 @@ export default function DashboardPage() {
         new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
     );
 
+  const hasProperties = properties && properties.total > 0;
+
   return (
     <div className="animate-fade-in">
       {/* Header */}
@@ -143,7 +145,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+      <div className={`grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8 ${!hasProperties ? "opacity-50 grayscale pointer-events-none" : ""}`}>
         {[
           {
             label: "Total Properties",
@@ -210,8 +212,61 @@ export default function DashboardPage() {
         ))}
       </div>
 
-      {/* Secondary Stats - Vacancy & Outstanding */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+      {/* Rest of dashboard / Onboarding state */}
+      {!hasProperties ? (
+        <div className="card p-8 lg:p-12 text-center animate-slide-up bg-gradient-to-br from-[var(--surface)] to-[var(--surface-inset)]">
+          <div className="w-16 h-16 mx-auto mb-6 rounded-2xl bg-[var(--primary-100)] flex items-center justify-center">
+            <Building2 className="w-8 h-8 text-[var(--primary-600)]" />
+          </div>
+          <h2 className="text-2xl font-bold mb-4" style={{ fontFamily: "var(--font-outfit)" }}>
+            Let&apos;s get your account set up
+          </h2>
+          <p className="text-[var(--text-secondary)] max-w-lg mx-auto mb-8">
+            You&apos;re just a few steps away from automating your rent collection and tracking maintenance requests.
+          </p>
+          
+          <Link 
+            href="/dashboard/properties" 
+            className="btn btn-primary inline-flex items-center gap-2 px-6 py-3 text-base shadow-lg shadow-[var(--primary-500)]/20 mb-12"
+          >
+            <Building2 className="w-5 h-5" />
+            Add your first property
+          </Link>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6 max-w-3xl mx-auto text-left">
+            <div className="card p-6 border-none bg-[var(--surface)] shadow-sm">
+              <div className="flex items-center justify-center w-8 h-8 rounded-full bg-[var(--surface-inset)] text-[var(--text-secondary)] font-medium mb-4">
+                1
+              </div>
+              <h4 className="font-semibold mb-2">Create Rooms</h4>
+              <p className="text-sm text-[var(--text-secondary)]">
+                Define the individual units, apartments, or rooms within your property.
+              </p>
+            </div>
+            <div className="card p-6 border-none bg-[var(--surface)] shadow-sm">
+              <div className="flex items-center justify-center w-8 h-8 rounded-full bg-[var(--surface-inset)] text-[var(--text-secondary)] font-medium mb-4">
+                2
+              </div>
+              <h4 className="font-semibold mb-2">Add Tenants</h4>
+              <p className="text-sm text-[var(--text-secondary)]">
+                Invite tenants, record their details, and set up their active leases.
+              </p>
+            </div>
+            <div className="card p-6 border-none bg-[var(--surface)] shadow-sm">
+              <div className="flex items-center justify-center w-8 h-8 rounded-full bg-[var(--surface-inset)] text-[var(--text-secondary)] font-medium mb-4">
+                3
+              </div>
+              <h4 className="font-semibold mb-2">Set Schedules</h4>
+              <p className="text-sm text-[var(--text-secondary)]">
+                Automate rent collection with recurring payment schedules.
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* Secondary Stats - Vacancy & Outstanding */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
         <div className="card p-5 animate-slide-up stagger-1">
           <div className="flex items-center gap-3 mb-3">
             <div className="w-9 h-9 rounded-lg bg-[var(--accent-100)] text-[var(--accent-600)] flex items-center justify-center">
@@ -611,6 +666,8 @@ export default function DashboardPage() {
           )}
         </div>
       </div>
+        </>
+      )}
     </div>
   );
 }
