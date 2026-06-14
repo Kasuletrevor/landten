@@ -468,7 +468,7 @@ class ApiClient {
     data: { payment_reference: string; notes?: string }
   ) {
     return this.request<Payment>(`/payments/${id}/mark-paid`, {
-      method: "POST",
+      method: "PUT",
       body: JSON.stringify(data),
     });
   }

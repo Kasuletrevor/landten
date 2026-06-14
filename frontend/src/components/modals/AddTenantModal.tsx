@@ -29,7 +29,7 @@ export function AddTenantModal({
   });
   const [scheduleData, setScheduleData] = useState({
     amount: 0,
-    frequency: "MONTHLY",
+    frequency: "BI_MONTHLY",
     due_day: 1,
     window_days: 5,
     start_date: new Date().toISOString().split("T")[0],

@@ -38,10 +38,13 @@ export default function PropertiesPage() {
     }
   };
 
-  const formatCurrency = (amount: number) => {
+  const formatCurrency = (amount: number, currencyCode: string = "UGX") => {
+    if (["UGX", "KES", "TZS", "RWF"].includes(currencyCode)) {
+      return `${currencyCode} ${amount.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+    }
     return new Intl.NumberFormat("en-US", {
       style: "currency",
-      currency: "USD",
+      currency: currencyCode,
       minimumFractionDigits: 0,
     }).format(amount);
   };
