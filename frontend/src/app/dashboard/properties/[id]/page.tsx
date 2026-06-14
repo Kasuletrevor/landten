@@ -215,7 +215,7 @@ export default function PropertyDetailPage() {
       </div>
 
       {/* Rooms Section */}
-      <div className="flex items-center justify-between mb-6 animate-slide-up stagger-1">
+      <div className="flex items-center justify-between mb-6 animate-slide-up stagger-1 relative z-20">
         <div>
           <h2
             className="text-xl font-semibold"
@@ -246,10 +246,10 @@ export default function PropertyDetailPage() {
           {showRoomDropdown && (
             <>
               <div
-                className="fixed inset-0 z-10"
+                className="fixed inset-0 z-40"
                 onClick={() => setShowRoomDropdown(false)}
               />
-              <div className="absolute right-0 top-full mt-1 w-48 bg-[var(--surface)] border border-[var(--border)] rounded-lg shadow-lg z-20">
+              <div className="absolute right-0 top-full mt-1 w-48 bg-[var(--surface)] border border-[var(--border)] rounded-lg shadow-lg z-50">
                 <button
                   onClick={() => {
                     setShowAddRoom(true);

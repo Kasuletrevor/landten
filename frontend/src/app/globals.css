@@ -207,7 +207,7 @@ a:hover { color: var(--primary-700); }
   box-shadow: var(--shadow-sm);
   transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
-  overflow: hidden;
+  /* overflow: hidden; removed so dropdowns can break out */
 }
 
 .card::before {
