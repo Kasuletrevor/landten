@@ -8,7 +8,7 @@ import os
 from datetime import date, timedelta
 from unittest.mock import AsyncMock, patch
 from fastapi.testclient import TestClient
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from app.models.landlord import Landlord
 from app.models.tenant import Tenant
@@ -444,6 +444,41 @@ def test_get_overdue_payments(
             "pending",
             "upcoming",
         ]  # Status gets updated
+
+
+def test_get_overdue_payments_preserves_verifying(
+    client: TestClient,
+    session: Session,
+    auth_landlord: Landlord,
+    auth_headers: dict,
+):
+    """Test that VERIFYING payments are not overwritten by the overdue endpoint."""
+    prop = PropertyFactory.create(session=session, landlord_id=auth_landlord.id)
+    room = RoomFactory.create(session=session, property_id=prop.id)
+    tenant = TenantFactory.create(session=session, room_id=room.id)
+
+    today = date.today()
+    schedule = PaymentScheduleFactory.create(session=session, tenant_id=tenant.id)
+
+    PaymentFactory.create(
+        session=session,
+        tenant_id=tenant.id,
+        schedule_id=schedule.id,
+        status=PaymentStatus.VERIFYING,
+        due_date=today - timedelta(days=15),
+        window_end_date=today - timedelta(days=10),
+    )
+
+    response = client.get("/api/payments/overdue", headers=auth_headers)
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 0
+    # Verify the payment is still VERIFYING in the database
+    db_payment = session.exec(
+        select(Payment).where(Payment.tenant_id == tenant.id)
+    ).first()
+    assert db_payment.status == PaymentStatus.VERIFYING
 
 
 # =============================================================================
