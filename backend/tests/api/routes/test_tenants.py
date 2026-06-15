@@ -511,6 +511,46 @@ def test_create_tenant_no_proration_before_5th(
     assert payments[0].is_manual is False  # Not a manual prorated payment
 
 
+def test_create_tenant_no_overlap_when_schedule_starts_current_month(
+    client: TestClient,
+    session: Session,
+    auth_landlord: Landlord,
+    auth_headers: dict,
+    test_property: Property,
+    test_room: Room,
+):
+    """Test that a mid-month move-in within the window does not create a second prorated charge."""
+    from app.models.payment import Payment
+
+    # Move in on the 10th with due day 15 and a 5-day window (10th-19th).
+    # The schedule starts in the current month, so the scheduled payment already
+    # covers the period and no prorated manual payment should be created.
+    move_in_date = date(2024, 6, 10)
+
+    tenant_data = {
+        "room_id": test_room.id,
+        "name": "Mid-window Tenant",
+        "email": "midwindow@example.com",
+        "move_in_date": move_in_date.isoformat(),
+        "payment_due_day": 15,
+        "payment_window_days": 5,
+        "auto_create_schedule": True,
+    }
+
+    response = client.post("/api/tenants", headers=auth_headers, json=tenant_data)
+
+    assert response.status_code == 201
+    data = response.json()
+
+    payments = session.exec(
+        select(Payment).where(Payment.tenant_id == data["id"])
+    ).all()
+
+    # Only the scheduled payment should exist; no manual prorated payment.
+    assert len(payments) == 1
+    assert payments[0].is_manual is False
+
+
 def test_create_tenant_occupied_room_fails(
     client: TestClient,
     session: Session,
