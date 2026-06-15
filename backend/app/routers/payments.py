@@ -97,7 +97,8 @@ def _parse_payment_status_filters(raw_statuses: str) -> list[PaymentStatus]:
 
 def _resolve_receipt_file_path(receipt_url: str) -> str:
     """Resolve a receipt_url to a safe local file path."""
-    # We only support serving receipts from our mounted uploads path.
+    # Receipts are stored under uploads/receipts and served only through
+    # authenticated API endpoints (never mounted publicly).
     if not receipt_url or not receipt_url.startswith("/uploads/receipts/"):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Receipt not found"
@@ -188,8 +189,8 @@ def calculate_period_dates(
     # Due date is at the start of the period
     due_date = period_start
 
-    # Window end date
-    window_end_date = due_date + relativedelta(days=schedule.window_days)
+    # Window end date (inclusive: e.g. due_day=1 with window_days=5 -> 1st-5th)
+    window_end_date = due_date + relativedelta(days=schedule.window_days - 1)
 
     return period_start, period_end, due_date, window_end_date
 
@@ -668,7 +669,12 @@ async def get_overdue_payments(
             Payment.tenant_id.in_(tenant_ids),
             Payment.window_end_date < today,
             Payment.status.notin_(
-                [PaymentStatus.ON_TIME, PaymentStatus.LATE, PaymentStatus.WAIVED]
+                [
+                    PaymentStatus.ON_TIME,
+                    PaymentStatus.LATE,
+                    PaymentStatus.WAIVED,
+                    PaymentStatus.VERIFYING,
+                ]
             ),
         )
         .order_by(Payment.due_date)
@@ -917,8 +923,8 @@ async def create_manual_payment(
             status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found"
         )
 
-    # Calculate window end (use default 5 days)
-    window_end_date = payment_data.due_date + relativedelta(days=5)
+    # Calculate window end (use default 5-day inclusive window)
+    window_end_date = payment_data.due_date + relativedelta(days=4)
 
     payment = Payment(
         tenant_id=payment_data.tenant_id,
@@ -1005,9 +1011,8 @@ async def upload_payment_receipt(
             detail=f"Could not save file: {str(e)}",
         )
 
-    # Update payment record
-    # Construct URL relative to base URL (client handles full URL construction)
-    # We mounted "uploads" in main.py so this is accessible via /uploads/...
+    # Update payment record.  The URL is a storage identifier only; receipts
+    # are served through the authenticated /payments/{id}/receipt endpoint.
     payment.receipt_url = f"/uploads/receipts/{filename}"
     payment.status = PaymentStatus.VERIFYING
     payment.updated_at = datetime.now(timezone.utc)
