@@ -1438,6 +1438,7 @@ def test_create_tenant_different_frequencies(
             "email": f"{freq}@example.com",
             "move_in_date": date(2024, 1, 1).isoformat(),
             "payment_frequency": freq,
+            "auto_create_schedule": True,
         }
 
         response = client.post("/api/tenants", headers=auth_headers, json=tenant_data)
@@ -1539,6 +1540,7 @@ def test_create_tenant_custom_due_day(
         "email": "customdue@example.com",
         "move_in_date": date(2024, 1, 1).isoformat(),
         "payment_due_day": 15,  # 15th of month
+        "auto_create_schedule": True,
     }
 
     response = client.post("/api/tenants", headers=auth_headers, json=tenant_data)
@@ -1570,6 +1572,7 @@ def test_create_tenant_custom_window_days(
         "email": "customwindow@example.com",
         "move_in_date": date(2024, 1, 1).isoformat(),
         "payment_window_days": 10,  # 10 day window
+        "auto_create_schedule": True,
     }
 
     response = client.post("/api/tenants", headers=auth_headers, json=tenant_data)
