@@ -159,7 +159,7 @@ async def create_tenant(
     By default (auto_create_schedule=True), automatically:
     1. Creates a payment schedule using the room's rent amount
     2. Uses the property's grace_period_days for the payment window
-    3. Creates a prorated payment if move-in is after the 5th of the month
+    3. Creates a prorated payment only if the first scheduled period is deferred
     4. Generates the first scheduled payment
 
     Set auto_create_schedule=False to skip automatic schedule creation.
