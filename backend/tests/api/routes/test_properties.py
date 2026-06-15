@@ -207,14 +207,14 @@ def test_create_property_invalid_data(client: TestClient, auth_headers: dict):
 def test_create_property_with_grace_period(
     client: TestClient, auth_landlord: Landlord, auth_headers: dict
 ):
-    """Test creating a property with custom grace period."""
-    # Note: grace_period_days is in schema but not implemented in router
+    """Test creating a property persists the grace period."""
     property_data = {"name": "Property with Grace", "grace_period_days": 10}
 
     response = client.post("/api/properties", headers=auth_headers, json=property_data)
 
     assert response.status_code == 201
-    # grace_period_days not currently handled by router - field exists in schema for future use
+    data = response.json()
+    assert data["grace_period_days"] == 10
 
 
 # =============================================================================
@@ -362,6 +362,31 @@ def test_update_property_partial(
     assert data["name"] == "New Name Only"
     assert data["address"] == "Original Address"  # Unchanged
     assert data["description"] == "Original Description"  # Unchanged
+
+
+def test_update_property_grace_period(
+    client: TestClient, session: Session, auth_landlord: Landlord, auth_headers: dict
+):
+    """Test updating a property persists a new grace period."""
+    from tests.factories import PropertyFactory
+
+    prop = PropertyFactory.create(
+        session=session,
+        landlord_id=auth_landlord.id,
+        name="Original Name",
+        grace_period_days=5,
+    )
+
+    update_data = {"grace_period_days": 12}
+
+    response = client.put(
+        f"/api/properties/{prop.id}", headers=auth_headers, json=update_data
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["grace_period_days"] == 12
+    assert data["name"] == "Original Name"  # Unchanged
 
 
 def test_update_property_not_found(client: TestClient, auth_headers: dict):
