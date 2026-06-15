@@ -906,16 +906,35 @@ class ApiClient {
     return this.request<void>(`/leases/${id}`, { method: "DELETE" });
   }
 
-  async downloadOriginalLease(leaseId: string) {
-    return this.request<Blob>(`/leases/${leaseId}/download-original`, {
+  private async downloadLeaseFile(endpoint: string): Promise<Blob> {
+    const token = this.getToken();
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${API_BASE}${endpoint}`, {
       method: "GET",
+      headers,
+      credentials: "include",
     });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({
+        detail: "An error occurred during download",
+      }));
+      throw new Error(error.detail);
+    }
+
+    return response.blob();
   }
 
-  async downloadSignedLease(leaseId: string) {
-    return this.request<Blob>(`/leases/${leaseId}/download-signed`, {
-      method: "GET",
-    });
+  async downloadOriginalLease(leaseId: string): Promise<Blob> {
+    return this.downloadLeaseFile(`/leases/${leaseId}/download-original`);
+  }
+
+  async downloadSignedLease(leaseId: string): Promise<Blob> {
+    return this.downloadLeaseFile(`/leases/${leaseId}/download-signed`);
   }
 
   // Tenant Lease Endpoints
