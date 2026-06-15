@@ -7,6 +7,7 @@ import api, {
   PropertyWithStats,
   TenantWithDetails,
 } from "@/lib/api";
+import { formatCurrency } from "@/lib/utils";
 import {
   FileText,
   Upload,
@@ -67,15 +68,6 @@ export default function LeasesPage() {
       lease.property_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       lease.room_name?.toLowerCase().includes(searchQuery.toLowerCase())
   );
-
-  const formatCurrency = (amount: number) => {
-    if (!amount) return "-";
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-      minimumFractionDigits: 0,
-    }).format(amount);
-  };
 
   const formatDate = (dateStr?: string) => {
     if (!dateStr) return "-";
