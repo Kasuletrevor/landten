@@ -110,7 +110,6 @@ async def lifespan(app: FastAPI):
     print("[Scheduler] Background scheduler stopped")
 
 
-from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 import os
@@ -122,6 +121,10 @@ os.makedirs("uploads/receipts", exist_ok=True)
 os.makedirs("uploads/disputes", exist_ok=True)
 os.makedirs("uploads/maintenance", exist_ok=True)
 os.makedirs("uploads/leases", exist_ok=True)
+
+# Upload subdirectories are intentionally NOT mounted as static files.
+# Receipts, leases, maintenance attachments, and dispute files must be
+# served through authenticated API endpoints only.
 
 # Create FastAPI app
 app = FastAPI(
@@ -159,20 +162,6 @@ app.include_router(maintenance.router, prefix="/api")
 app.include_router(notifications.router, prefix="/api")
 app.include_router(analytics.router, prefix="/api")
 app.include_router(leases.router, prefix="/api")
-
-
-@app.get("/uploads/maintenance/{filename:path}")
-async def block_public_maintenance_uploads(filename: str):
-    """Maintenance attachments must be served via authenticated routes."""
-    _ = filename
-    raise HTTPException(
-        status_code=status.HTTP_404_NOT_FOUND,
-        detail="Maintenance attachment not found",
-    )
-
-
-# Mount static files for uploads
-app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 
 @app.get("/")
