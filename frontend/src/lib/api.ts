@@ -475,7 +475,7 @@ class ApiClient {
 
   async waivePayment(id: string, reason: string) {
     return this.request<Payment>(`/payments/${id}/waive`, {
-      method: "POST",
+      method: "PUT",
       body: JSON.stringify({ reason }),
     });
   }
@@ -1125,7 +1125,7 @@ export interface PaymentSchedule {
   id: string;
   tenant_id: string;
   amount: number;
-  frequency: "MONTHLY" | "BI_MONTHLY" | "QUARTERLY";
+  frequency: "monthly" | "bi_monthly" | "quarterly";
   due_day: number;
   window_days: number;
   start_date: string;
