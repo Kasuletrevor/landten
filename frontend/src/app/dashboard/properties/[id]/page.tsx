@@ -329,7 +329,7 @@ export default function PropertyDetailPage() {
                     <div>
                       <h3 className="font-semibold">{room.name}</h3>
                       <p className="text-sm text-[var(--text-muted)]">
-                        {formatCurrency(room.rent_amount, room.currency)}/month
+                        {formatCurrency(room.rent_amount, room.currency)}/period
                       </p>
                     </div>
                   </div>
@@ -542,7 +542,7 @@ function RoomModal({
 
             <div>
               <label htmlFor="rent" className="label">
-                Monthly Rent
+                Rent Amount
               </label>
               <div className="flex gap-2">
                 {/* Currency Dropdown */}
@@ -1126,7 +1126,7 @@ function BulkRoomModal({
 
             {/* Currency and First Price */}
             <div>
-              <label className="label">Monthly Rent</label>
+              <label className="label">Rent Amount</label>
               <div className="flex gap-2">
                 {/* Currency Dropdown */}
                 <div className="relative">
