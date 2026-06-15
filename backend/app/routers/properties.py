@@ -74,6 +74,7 @@ async def create_property(
         name=property_data.name,
         address=property_data.address,
         description=property_data.description,
+        grace_period_days=property_data.grace_period_days,
     )
     session.add(property)
     session.commit()
@@ -138,6 +139,8 @@ async def update_property(
         property.address = update_data.address
     if update_data.description is not None:
         property.description = update_data.description
+    if update_data.grace_period_days is not None:
+        property.grace_period_days = update_data.grace_period_days
 
     property.updated_at = datetime.now(timezone.utc)
     session.add(property)
