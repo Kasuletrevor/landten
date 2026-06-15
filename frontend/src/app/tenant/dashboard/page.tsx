@@ -252,7 +252,7 @@ export default function TenantDashboardPage() {
                  <Home className="w-6 h-6 text-[var(--primary-700)]" />
               </div>
               <div className="min-w-0">
-                 <p className="text-sm text-[var(--text-muted)]">Monthly Rent</p>
+                  <p className="text-sm text-[var(--text-muted)]">Rent Amount</p>
                  <p className="text-lg font-bold truncate">
                    {tenant.rent_amount ? formatCurrency(tenant.rent_amount) : tenant.room_name}
                  </p>
