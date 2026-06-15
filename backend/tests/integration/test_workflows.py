@@ -694,6 +694,194 @@ class TestWorkflow4MultiTenantProperty:
 
 
 # =============================================================================
+# Workflow 3: Demo Path - Manual Bi-Monthly Schedule and Payment Collection
+# =============================================================================
+
+
+class TestWorkflow3DemoPath:
+    """
+    Real demo path exercised by the frontend:
+    1. Landlord registers and logs in
+    2. Landlord adds a property
+    3. Landlord bulk creates rooms
+    4. Landlord adds a tenant (without auto-created schedule)
+    5. Landlord creates a bi_monthly payment schedule
+    6. A payment appears for the tenant
+    7. Landlord marks the payment paid with a receipt reference
+    8. Payment summary totals update to reflect the received amount
+    """
+
+    def test_demo_path_bi_monthly_schedule_and_mark_paid(
+        self, client: TestClient, session: Session
+    ):
+        """End-to-end demo path with bi-monthly schedule and mark paid."""
+        # Step 1: Register and log in as a landlord
+        register_response = client.post(
+            "/api/auth/register",
+            json={
+                "name": "Demo Landlord",
+                "email": "demo.landlord@test.com",
+                "password": "demopass123",
+                "phone": "555-9999",
+            },
+        )
+        assert register_response.status_code == 201
+        login_response = client.post(
+            "/api/auth/login",
+            json={"email": "demo.landlord@test.com", "password": "demopass123"},
+        )
+        assert login_response.status_code == 200
+        login_data = login_response.json()
+        landlord_headers = {
+            "Authorization": f"Bearer {login_data['access_token']}"
+        }
+
+        # Step 2: Add property
+        property_response = client.post(
+            "/api/properties",
+            headers=landlord_headers,
+            json={
+                "name": "Makerere Hostel",
+                "address": "Makerere Hill Road, Kampala",
+                "description": "Demo property for end-to-end test",
+                "grace_period_days": 5,
+            },
+        )
+        assert property_response.status_code == 201
+        property_id = property_response.json()["id"]
+
+        # Step 3: Bulk create rooms
+        bulk_response = client.post(
+            f"/api/properties/{property_id}/rooms/bulk",
+            headers=landlord_headers,
+            json={
+                "prefix": "L",
+                "from_number": 1,
+                "to_number": 10,
+                "currency": "UGX",
+                "price_ranges": [
+                    {"from_number": 1, "to_number": 10, "rent_amount": 450000}
+                ],
+                "padding": 3,
+            },
+        )
+        assert bulk_response.status_code == 201
+        bulk_data = bulk_response.json()
+        assert bulk_data["total_created"] == 10
+        rooms = bulk_data["created"]
+
+        # Step 4: Add tenant to the first room
+        today = date.today()
+        move_in_date = today.replace(day=1)
+        tenant_response = client.post(
+            "/api/tenants",
+            headers=landlord_headers,
+            json={
+                "room_id": rooms[0]["id"],
+                "name": "Demo Tenant",
+                "email": "demo.tenant@test.com",
+                "phone": "555-0001",
+                "move_in_date": move_in_date.isoformat(),
+                "auto_create_schedule": False,
+            },
+        )
+        assert tenant_response.status_code == 201
+        tenant_data = tenant_response.json()
+        tenant_id = tenant_data["id"]
+        assert tenant_data["has_payment_schedule"] is False
+        assert tenant_data["room"]["name"] == "L001"
+        assert tenant_data["property"]["name"] == "Makerere Hostel"
+
+        # Step 5: Create bi_monthly payment schedule
+        schedule_response = client.post(
+            f"/api/tenants/{tenant_id}/schedule",
+            headers=landlord_headers,
+            json={
+                "amount": 450000,
+                "frequency": "bi_monthly",
+                "due_day": 1,
+                "window_days": 5,
+                "start_date": move_in_date.isoformat(),
+            },
+        )
+        assert schedule_response.status_code == 201
+        schedule_data = schedule_response.json()
+        assert schedule_data["frequency"] == "bi_monthly"
+
+        # Step 6: Verify payment appears
+        payments_response = client.get(
+            "/api/payments",
+            headers=landlord_headers,
+        )
+        assert payments_response.status_code == 200
+        payments_data = payments_response.json()
+        assert payments_data["total"] == 1
+        payment = payments_data["payments"][0]
+        assert payment["tenant_id"] == tenant_id
+        assert payment["amount_due"] == 450000
+        assert payment["currency"] == "UGX"
+
+        # Step 7: Mark payment paid with receipt reference
+        mark_paid_response = client.put(
+            f"/api/payments/{payment['id']}/mark-paid",
+            headers=landlord_headers,
+            json={
+                "payment_reference": "REF-DEMO-001",
+                "notes": "Received via bank transfer",
+            },
+        )
+        assert mark_paid_response.status_code == 200
+        paid_payment = mark_paid_response.json()
+        assert paid_payment["status"] == "on_time"
+        assert paid_payment["payment_reference"] == "REF-DEMO-001"
+
+        # Step 8: Verify payment summary totals update
+        summary_response = client.get(
+            "/api/payments/summary",
+            headers=landlord_headers,
+        )
+        assert summary_response.status_code == 200
+        summary = summary_response.json()
+        assert summary["total_received"] == 450000
+        assert summary["total_expected"] == 450000
+        assert summary["total_outstanding"] == 0
+        assert summary["paid_count"] == 1
+
+        # Verify tenant detail now includes the paid payment
+        tenant_detail_response = client.get(
+            f"/api/tenants/{tenant_id}",
+            headers=landlord_headers,
+        )
+        assert tenant_detail_response.status_code == 200
+        tenant_detail = tenant_detail_response.json()
+        assert tenant_detail["has_payment_schedule"] is True
+        assert len(tenant_detail["payments"]) == 1
+        assert tenant_detail["payments"][0]["status"] == "on_time"
+
+        # Verify duplicate bulk creation skips existing rooms
+        duplicate_bulk_response = client.post(
+            f"/api/properties/{property_id}/rooms/bulk",
+            headers=landlord_headers,
+            json={
+                "prefix": "L",
+                "from_number": 1,
+                "to_number": 5,
+                "currency": "UGX",
+                "price_ranges": [
+                    {"from_number": 1, "to_number": 5, "rent_amount": 500000}
+                ],
+                "padding": 3,
+            },
+        )
+        assert duplicate_bulk_response.status_code == 201
+        duplicate_data = duplicate_bulk_response.json()
+        assert duplicate_data["total_created"] == 0
+        assert any(
+            "already exists" in warning for warning in duplicate_data["warnings"]
+        )
+
+
+# =============================================================================
 # Workflow 5: Move-Out and New Tenant
 # =============================================================================
 
