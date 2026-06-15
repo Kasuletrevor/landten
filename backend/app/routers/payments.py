@@ -402,20 +402,30 @@ async def get_payment_summary(
     today = date.today()
     first_of_month = date(today.year, today.month, 1)
 
+    # If a property filter is supplied, verify it belongs to the landlord first.
+    if property_id:
+        property = session.get(Property, property_id)
+        if not property or property.landlord_id != current_landlord.id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Property not found"
+            )
+
     tenant_ids = get_landlord_tenant_ids(current_landlord.id, session)
     if not tenant_ids:
         return PaymentSummary()
 
-    # Filter by property if specified
+    # Filter by property if specified.
     if property_id:
         rooms = session.exec(select(Room).where(Room.property_id == property_id)).all()
         room_ids = [r.id for r in rooms]
-        tenant_ids = [
+        property_tenant_ids = {
             t.id
             for t in session.exec(
                 select(Tenant).where(Tenant.room_id.in_(room_ids))
             ).all()
-        ]
+        }
+        # Intersect with landlord's tenant scope.
+        tenant_ids = list(set(tenant_ids) & property_tenant_ids)
 
     if not tenant_ids:
         return PaymentSummary()
@@ -480,6 +490,7 @@ async def get_payment_summary(
 @router.get("/upcoming", response_model=PaymentListResponse)
 async def get_upcoming_payments(
     days: int = Query(30, ge=1, le=90),
+    property_id: Optional[str] = Query(None, description="Filter by property ID"),
     current_landlord: Landlord = Depends(get_current_landlord),
     session: Session = Depends(get_session),
 ):
@@ -490,6 +501,26 @@ async def get_upcoming_payments(
     end_date = today + relativedelta(days=days)
 
     tenant_ids = get_landlord_tenant_ids(current_landlord.id, session)
+    if not tenant_ids:
+        return PaymentListResponse(payments=[], total=0)
+
+    # Apply property filter, verifying the property belongs to the landlord.
+    if property_id:
+        property = session.get(Property, property_id)
+        if not property or property.landlord_id != current_landlord.id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Property not found"
+            )
+        rooms = session.exec(select(Room).where(Room.property_id == property_id)).all()
+        room_ids = [r.id for r in rooms]
+        property_tenant_ids = {
+            t.id
+            for t in session.exec(
+                select(Tenant).where(Tenant.room_id.in_(room_ids))
+            ).all()
+        }
+        tenant_ids = list(set(tenant_ids) & property_tenant_ids)
+
     if not tenant_ids:
         return PaymentListResponse(payments=[], total=0)
 
@@ -650,6 +681,7 @@ async def export_payments(
 
 @router.get("/overdue", response_model=PaymentListResponse)
 async def get_overdue_payments(
+    property_id: Optional[str] = Query(None, description="Filter by property ID"),
     current_landlord: Landlord = Depends(get_current_landlord),
     session: Session = Depends(get_session),
 ):
@@ -659,6 +691,26 @@ async def get_overdue_payments(
     today = date.today()
 
     tenant_ids = get_landlord_tenant_ids(current_landlord.id, session)
+    if not tenant_ids:
+        return PaymentListResponse(payments=[], total=0)
+
+    # Apply property filter, verifying the property belongs to the landlord.
+    if property_id:
+        property = session.get(Property, property_id)
+        if not property or property.landlord_id != current_landlord.id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Property not found"
+            )
+        rooms = session.exec(select(Room).where(Room.property_id == property_id)).all()
+        room_ids = [r.id for r in rooms]
+        property_tenant_ids = {
+            t.id
+            for t in session.exec(
+                select(Tenant).where(Tenant.room_id.in_(room_ids))
+            ).all()
+        }
+        tenant_ids = list(set(tenant_ids) & property_tenant_ids)
+
     if not tenant_ids:
         return PaymentListResponse(payments=[], total=0)
 

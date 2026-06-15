@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from typing import Optional, List
 from datetime import datetime, date
 from app.models.payment_schedule import PaymentFrequency
@@ -23,10 +23,10 @@ class TenantCreate(BaseModel):
     # If payment_amount is provided, uses that instead of room rent
     # Default is False so the frontend can create schedules via Step 2 of the modal
     auto_create_schedule: bool = False
-    payment_amount: Optional[float] = None  # Override room rent if provided
-    payment_frequency: Optional[PaymentFrequency] = PaymentFrequency.MONTHLY
-    payment_due_day: Optional[int] = 1  # 1st of month (standard)
-    payment_window_days: Optional[int] = None  # Will use property's grace_period_days
+    payment_amount: Optional[float] = Field(default=None, gt=0)  # Override room rent if provided
+    payment_frequency: Optional[PaymentFrequency] = PaymentFrequency.BI_MONTHLY
+    payment_due_day: Optional[int] = Field(default=1, ge=1, le=28)
+    payment_window_days: Optional[int] = Field(default=None, ge=1, le=15)
 
 
 class TenantUpdate(BaseModel):

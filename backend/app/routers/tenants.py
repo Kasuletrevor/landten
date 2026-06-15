@@ -220,7 +220,7 @@ async def create_tenant(
         schedule = PaymentSchedule(
             tenant_id=tenant.id,
             amount=rent_amount,
-            frequency=tenant_data.payment_frequency or PaymentFrequency.MONTHLY,
+            frequency=tenant_data.payment_frequency or PaymentFrequency.BI_MONTHLY,
             due_day=tenant_data.payment_due_day or 1,
             window_days=window_days,
             start_date=schedule_start,
