@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import api, { TenantWithDetails, Payment, PaymentStatus } from "@/lib/api";
+import { formatCurrency } from "@/lib/utils";
 import {
   ArrowLeft,
   Mail,
@@ -54,14 +55,6 @@ export default function TenantDetailPage() {
   useEffect(() => {
     void loadData();
   }, [loadData]);
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-      minimumFractionDigits: 0,
-    }).format(amount);
-  };
 
   const formatDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleDateString("en-US", {
@@ -247,7 +240,7 @@ export default function TenantDetailPage() {
                     {tenant.room?.name}
                   </span>
                   <span className="text-sm font-medium">
-                    {formatCurrency(tenant.room?.rent_amount || 0)}/mo
+                    {formatCurrency(tenant.room?.rent_amount || 0, tenant.room?.currency)}/mo
                   </span>
                 </div>
               </Link>
@@ -274,7 +267,7 @@ export default function TenantDetailPage() {
                   <div className="flex justify-between text-sm">
                     <span className="text-[var(--text-muted)]">Amount</span>
                     <span className="font-medium">
-                      {formatCurrency(tenant.payment_schedule.amount)}
+                      {formatCurrency(tenant.payment_schedule.amount, tenant.room?.currency)}
                     </span>
                   </div>
                   <div className="flex justify-between text-sm">
@@ -312,7 +305,7 @@ export default function TenantDetailPage() {
             {[
               {
                 label: "Total Paid",
-                value: formatCurrency(totalPaid),
+                value: formatCurrency(totalPaid, tenant.room?.currency),
                 icon: DollarSign,
                 color: "success",
               },
@@ -386,7 +379,7 @@ export default function TenantDetailPage() {
               <div className="divide-y divide-[var(--border)]">
                 {tenant.payments.map((payment, i) => {
                   const status = statusConfig[payment.status];
-                  const isPending = ["UPCOMING", "PENDING", "OVERDUE"].includes(payment.status);
+                  const isPending = ["upcoming", "pending", "overdue"].includes(payment.status);
 
                   return (
                     <div
@@ -432,7 +425,7 @@ export default function TenantDetailPage() {
                         <div className="flex items-center gap-4">
                           <div className="text-right">
                             <p className="font-semibold">
-                              {formatCurrency(payment.amount_due)}
+                              {formatCurrency(payment.amount_due, tenant.room?.currency)}
                             </p>
                             <span className={`badge ${status.class}`}>
                               {status.label}
@@ -485,6 +478,7 @@ export default function TenantDetailPage() {
         <EditScheduleModal
           tenantId={tenant.id}
           schedule={tenant.payment_schedule}
+          currency={tenant.room?.currency}
           onClose={() => setShowEditSchedule(false)}
           onSave={() => {
             loadData();
@@ -522,6 +516,7 @@ export default function TenantDetailPage() {
         <MarkPaidModal
           payment={markPaidPayment}
           tenantName={tenant.name}
+          currency={tenant.room?.currency}
           onClose={() => setMarkPaidPayment(null)}
           onSave={() => {
             loadData();
@@ -548,7 +543,7 @@ function PaymentStatusBanner({
 }) {
   // Find next actionable payment (upcoming, pending, or overdue)
   const nextPayment = payments.find((p) =>
-    ["UPCOMING", "PENDING", "OVERDUE"].includes(p.status)
+    ["upcoming", "pending", "overdue"].includes(p.status)
   );
 
   if (!nextPayment) return null;
@@ -583,18 +578,6 @@ function PaymentStatusBanner({
     ? "Rent due today"
     : `Rent due in ${diffDays} day${diffDays !== 1 ? "s" : ""}`;
 
-  const formatBannerCurrency = (amount: number, currency?: string) => {
-    const curr = currency || "UGX";
-    if (["UGX", "KES", "TZS", "RWF"].includes(curr)) {
-      return `${curr} ${amount.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
-    }
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: curr,
-      minimumFractionDigits: 0,
-    }).format(amount);
-  };
-
   const formatBannerDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleDateString("en-US", {
       month: "short",
@@ -620,7 +603,7 @@ function PaymentStatusBanner({
               {message}
             </p>
             <p className="text-sm text-[var(--text-secondary)]">
-              {formatBannerCurrency(nextPayment.amount_due, roomCurrency)} due{" "}
+              {formatCurrency(nextPayment.amount_due, roomCurrency)} due{" "}
               {formatBannerDate(nextPayment.due_date)}
             </p>
           </div>
@@ -744,22 +727,24 @@ function EditTenantModal({
 function EditScheduleModal({
   tenantId,
   schedule,
+  currency,
   onClose,
   onSave,
 }: {
   tenantId: string;
   schedule: TenantWithDetails["payment_schedule"];
+  currency?: string;
   onClose: () => void;
   onSave: () => void;
 }) {
   const [formData, setFormData] = useState<{
     amount: number;
-    frequency: "MONTHLY" | "BI_MONTHLY" | "QUARTERLY";
+    frequency: "monthly" | "bi_monthly" | "quarterly";
     due_day: number;
     window_days: number;
   }>({
     amount: schedule?.amount || 0,
-    frequency: schedule?.frequency || "MONTHLY",
+    frequency: schedule?.frequency || "monthly",
     due_day: schedule?.due_day || 1,
     window_days: schedule?.window_days || 5,
   });
@@ -805,8 +790,8 @@ function EditScheduleModal({
               <div>
                 <label className="label">Rent Amount</label>
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]">
-                    $
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)] font-medium text-sm">
+                    {currency || "UGX"}
                   </span>
                   <input
                     type="number"
@@ -814,7 +799,7 @@ function EditScheduleModal({
                     onChange={(e) =>
                       setFormData((prev) => ({ ...prev, amount: parseFloat(e.target.value) || 0 }))
                     }
-                    className="input pl-8"
+                    className="input !pl-16"
                     min="0"
                     required
                   />
@@ -824,12 +809,12 @@ function EditScheduleModal({
                 <label className="label">Frequency</label>
                 <select
                   value={formData.frequency}
-                  onChange={(e) => setFormData((prev) => ({ ...prev, frequency: e.target.value as "MONTHLY" | "BI_MONTHLY" | "QUARTERLY" }))}
+                  onChange={(e) => setFormData((prev) => ({ ...prev, frequency: e.target.value as "monthly" | "bi_monthly" | "quarterly" }))}
                   className="input"
                 >
-                  <option value="MONTHLY">Monthly</option>
-                  <option value="BI_MONTHLY">Bi-Monthly</option>
-                  <option value="QUARTERLY">Quarterly</option>
+                  <option value="monthly">Monthly</option>
+                  <option value="bi_monthly">Bi-Monthly</option>
+                  <option value="quarterly">Quarterly</option>
                 </select>
               </div>
             </div>
@@ -989,11 +974,13 @@ function MoveOutModal({
 function MarkPaidModal({
   payment,
   tenantName,
+  currency,
   onClose,
   onSave,
 }: {
   payment: Payment;
   tenantName: string;
+  currency?: string;
   onClose: () => void;
   onSave: () => void;
 }) {
@@ -1027,14 +1014,6 @@ function MarkPaidModal({
     }
   };
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-      minimumFractionDigits: 0,
-    }).format(amount);
-  };
-
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -1059,7 +1038,7 @@ function MarkPaidModal({
               <div className="flex items-center justify-between">
                 <span className="text-[var(--text-secondary)]">{tenantName}</span>
                 <span className="text-xl font-bold" style={{ fontFamily: "var(--font-outfit)" }}>
-                  {formatCurrency(payment.amount_due)}
+                  {formatCurrency(payment.amount_due, currency)}
                 </span>
               </div>
             </div>
