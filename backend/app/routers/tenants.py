@@ -229,8 +229,14 @@ async def create_tenant(
         session.commit()
         session.refresh(schedule)
 
-        # Create prorated payment if move-in is after the 5th of the month
-        if tenant_data.move_in_date.day > 5:
+        # Create a prorated payment only when the first scheduled period is
+        # deferred to a later month. This avoids double-charging when the
+        # scheduled payment already covers the move-in month.
+        schedule_deferred = (
+            schedule_start.year != tenant_data.move_in_date.year
+            or schedule_start.month != tenant_data.move_in_date.month
+        )
+        if schedule_deferred:
             prorated_payment = create_prorated_payment(
                 tenant_id=tenant.id,
                 monthly_rent=rent_amount,
