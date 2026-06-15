@@ -7,6 +7,7 @@ from dateutil.relativedelta import relativedelta
 import mimetypes
 import logging
 
+from app.core.currency import convert_currency
 from app.core.database import get_session
 from app.core.security import (
     decode_token,
@@ -430,6 +431,15 @@ async def get_payment_summary(
     if not tenant_ids:
         return PaymentSummary()
 
+    # Get tenants and rooms so we can convert mixed-currency payments into the
+    # landlord's primary currency before summing.
+    tenants = session.exec(select(Tenant).where(Tenant.id.in_(tenant_ids))).all()
+    tenant_room_map = {t.id: t.room_id for t in tenants}
+    room_ids = [rid for rid in tenant_room_map.values() if rid]
+    rooms = session.exec(select(Room).where(Room.id.in_(room_ids))).all() if room_ids else []
+    room_currency_map = {r.id: r.currency for r in rooms}
+    target_currency = current_landlord.primary_currency or "UGX"
+
     # Get all payments for these tenants
     payments = session.exec(
         select(Payment).where(Payment.tenant_id.in_(tenant_ids))
@@ -453,7 +463,9 @@ async def get_payment_summary(
             payment.updated_at = datetime.now(timezone.utc)
             session.add(payment)
 
-        amount = payment.amount_due
+        room_id = tenant_room_map.get(payment.tenant_id)
+        payment_currency = room_currency_map.get(room_id, "UGX") if room_id else "UGX"
+        amount = convert_currency(payment.amount_due, payment_currency, target_currency)
 
         if payment.status == PaymentStatus.UPCOMING:
             upcoming += 1
