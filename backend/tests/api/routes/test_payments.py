@@ -811,5 +811,5 @@ def test_summary_with_property_filter(
     data = response.json()
 
     # Should only include payments from property1
-    assert data["amount_outstanding"] == 100000
-    assert data["total_pending"] == 1
+    assert data["total_outstanding"] == 100000
+    assert data["pending_count"] == 1
