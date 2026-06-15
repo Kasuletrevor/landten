@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect } from "react";
 import api, { PropertyWithStats } from "@/lib/api";
+import { formatCurrency } from "@/lib/utils";
 import { X, ChevronRight } from "lucide-react";
 
 export function AddTenantModal({
@@ -165,7 +166,7 @@ export function AddTenantModal({
                       <option value="" disabled>Select a room</option>
                       {rooms.map((room) => (
                         <option key={room.id} value={room.id}>
-                          {room.name} — {room.currency} {room.rent_amount.toLocaleString()}/month
+                          {room.name} — {formatCurrency(room.rent_amount, room.currency)}/period
                         </option>
                       ))}
                     </select>
