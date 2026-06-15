@@ -2,6 +2,10 @@ from pydantic import BaseModel, EmailStr
 from typing import Optional, List
 from datetime import datetime, date
 from app.models.payment_schedule import PaymentFrequency
+from app.schemas.room import RoomResponse
+from app.schemas.property import PropertyResponse
+from app.schemas.payment_schedule import PaymentScheduleResponse
+from app.schemas.payment import PaymentResponse
 
 
 # Request schemas
@@ -109,6 +113,12 @@ class TenantWithDetails(TenantResponse):
     has_portal_access: bool = False
     pending_payments: int = 0
     overdue_payments: int = 0
+
+    # Nested objects for detail view (also present in list responses for type consistency)
+    room: Optional[RoomResponse] = None
+    property: Optional[PropertyResponse] = None
+    payment_schedule: Optional[PaymentScheduleResponse] = None
+    payments: List[PaymentResponse] = []
 
 
 class TenantListResponse(BaseModel):

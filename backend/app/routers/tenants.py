@@ -30,6 +30,9 @@ from app.schemas.payment_schedule import (
     PaymentScheduleUpdate,
     PaymentScheduleResponse,
 )
+from app.schemas.room import RoomResponse
+from app.schemas.property import PropertyResponse
+from app.schemas.payment import PaymentResponse
 from app.services.payment_service import (
     create_prorated_payment,
     generate_payment_for_schedule,
@@ -130,6 +133,12 @@ async def list_tenants(
                 has_portal_access=tenant.password_hash is not None,
                 pending_payments=len(pending_count),
                 overdue_payments=len(overdue_count),
+                room=RoomResponse.model_validate(room) if room else None,
+                property=PropertyResponse.model_validate(property) if property else None,
+                payment_schedule=PaymentScheduleResponse.model_validate(schedule)
+                if schedule
+                else None,
+                payments=[],
             )
         )
 
@@ -242,13 +251,21 @@ async def create_tenant(
     return TenantWithDetails(
         **tenant.model_dump(),
         room_name=room.name,
-        property_id=property.id,
         property_name=property.name,
+        property_id=property.id,
         rent_amount=room.rent_amount,
         has_payment_schedule=schedule is not None,
         has_portal_access=tenant.password_hash is not None,
         pending_payments=1 if prorated_payment else 0,
         overdue_payments=0,
+        room=RoomResponse.model_validate(room),
+        property=PropertyResponse.model_validate(property),
+        payment_schedule=PaymentScheduleResponse.model_validate(schedule)
+        if schedule
+        else None,
+        payments=[PaymentResponse.model_validate(prorated_payment)]
+        if prorated_payment
+        else [],
     )
 
 
@@ -276,20 +293,17 @@ async def get_tenant(
         )
     ).first()
 
+    # Get payments for this tenant
+    payments = session.exec(
+        select(Payment).where(Payment.tenant_id == tenant.id)
+    ).all()
+
     # Count pending/overdue payments
     pending_count = len(
-        session.exec(
-            select(Payment).where(
-                Payment.tenant_id == tenant.id, Payment.status == PaymentStatus.PENDING
-            )
-        ).all()
+        [p for p in payments if p.status == PaymentStatus.PENDING]
     )
     overdue_count = len(
-        session.exec(
-            select(Payment).where(
-                Payment.tenant_id == tenant.id, Payment.status == PaymentStatus.OVERDUE
-            )
-        ).all()
+        [p for p in payments if p.status == PaymentStatus.OVERDUE]
     )
 
     return TenantWithDetails(
@@ -302,6 +316,12 @@ async def get_tenant(
         has_portal_access=tenant.password_hash is not None,
         pending_payments=pending_count,
         overdue_payments=overdue_count,
+        room=RoomResponse.model_validate(room),
+        property=PropertyResponse.model_validate(property),
+        payment_schedule=PaymentScheduleResponse.model_validate(schedule)
+        if schedule
+        else None,
+        payments=[PaymentResponse.model_validate(p) for p in payments],
     )
 
 
