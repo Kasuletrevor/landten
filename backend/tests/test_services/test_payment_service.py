@@ -19,6 +19,7 @@ from app.services.payment_service import (
     update_payment_statuses,
     get_payments_entering_window,
     get_payments_becoming_overdue,
+    normalize_schedule_start,
 )
 from app.models.payment import Payment, PaymentStatus
 from app.models.payment_schedule import PaymentSchedule, PaymentFrequency
@@ -241,7 +242,7 @@ class TestCreateProratedPayment:
     @patch("app.services.payment_service.date")
     def test_status_pending_when_in_window(self, mock_date, session):
         """Test PENDING status when today is in payment window."""
-        # Due date is 18th, window ends 21st
+        # Due date is 18th, inclusive 3-day window ends 20th
         setup_date_mock(mock_date, date(2024, 1, 19))
         scenario = create_full_test_scenario(session)
         tenant = scenario["tenant"]
@@ -259,7 +260,7 @@ class TestCreateProratedPayment:
     @patch("app.services.payment_service.date")
     def test_status_overdue_when_after_window(self, mock_date, session):
         """Test OVERDUE status when today is after window end."""
-        # Window ends on 21st
+        # Window ends on 20th
         setup_date_mock(mock_date, date(2024, 1, 25))
         scenario = create_full_test_scenario(session)
         tenant = scenario["tenant"]
@@ -291,8 +292,8 @@ class TestCreateProratedPayment:
         assert payment.period_end == date(2024, 1, 31)
         # Due date is 3 days from move-in
         assert payment.due_date == date(2024, 1, 18)
-        # Window is 3 days after due date
-        assert payment.window_end_date == date(2024, 1, 21)
+        # Inclusive 3-day window ends 2 days after due date
+        assert payment.window_end_date == date(2024, 1, 20)
 
     def test_payment_saved_to_database(self, session):
         """Test that created payment is persisted."""
@@ -344,6 +345,44 @@ class TestGetFrequencyMonths:
 
 
 # =============================================================================
+# Tests for normalize_schedule_start
+# =============================================================================
+
+
+class TestNormalizeScheduleStart:
+    """Test schedule start alignment so the first window is not already closed."""
+
+    def test_start_inside_window_uses_current_month(self):
+        """Start on the window end day -> schedule starts 1st of current month."""
+        result = normalize_schedule_start(date(2024, 6, 5), due_day=1, window_days=5)
+        assert result == date(2024, 6, 1)
+
+    def test_start_before_window_uses_current_month(self):
+        """Start before the window -> schedule starts 1st of current month."""
+        result = normalize_schedule_start(date(2024, 6, 3), due_day=1, window_days=5)
+        assert result == date(2024, 6, 1)
+
+    def test_start_after_window_rolls_to_next_month(self):
+        """Start after the window -> schedule starts 1st of next month."""
+        result = normalize_schedule_start(date(2024, 6, 15), due_day=1, window_days=5)
+        assert result == date(2024, 7, 1)
+
+    def test_uses_supplied_due_day(self):
+        """Window is computed from the schedule's due day, not hardcoded to 1."""
+        # due_day=10, window_days=5 -> window ends on the 14th
+        result = normalize_schedule_start(date(2024, 6, 16), due_day=10, window_days=5)
+        assert result == date(2024, 7, 1)
+
+        result = normalize_schedule_start(date(2024, 6, 12), due_day=10, window_days=5)
+        assert result == date(2024, 6, 1)
+
+    def test_year_boundary_rollover(self):
+        """Rolling from December to January works correctly."""
+        result = normalize_schedule_start(date(2024, 12, 20), due_day=1, window_days=5)
+        assert result == date(2025, 1, 1)
+
+
+# =============================================================================
 # Tests for calculate_next_period
 # =============================================================================
 
@@ -371,7 +410,8 @@ class TestCalculateNextPeriod:
         assert period_start == date(2024, 1, 1)
         assert period_end == date(2024, 1, 31)
         assert due_date == date(2024, 1, 5)
-        assert window_end == date(2024, 1, 8)
+        # Inclusive 3-day window: 5th, 6th, 7th
+        assert window_end == date(2024, 1, 7)
 
     def test_bi_monthly_period_calculation(self, session):
         """Test period calculation for bi-monthly schedule."""
@@ -393,7 +433,8 @@ class TestCalculateNextPeriod:
         assert period_start == date(2024, 1, 1)
         assert period_end == date(2024, 2, 29)  # 2024 is leap year
         assert due_date == date(2024, 1, 10)
-        assert window_end == date(2024, 1, 15)
+        # Inclusive 5-day window: 10th-14th
+        assert window_end == date(2024, 1, 14)
 
     def test_quarterly_period_calculation(self, session):
         """Test period calculation for quarterly schedule."""
@@ -415,7 +456,8 @@ class TestCalculateNextPeriod:
         assert period_start == date(2024, 1, 1)
         assert period_end == date(2024, 3, 31)
         assert due_date == date(2024, 1, 1)
-        assert window_end == date(2024, 1, 8)
+        # Inclusive 7-day window: 1st-7th
+        assert window_end == date(2024, 1, 7)
 
     def test_finds_period_after_given_date(self, session):
         """Test that it finds the period that ends on or after the given date."""
@@ -479,7 +521,8 @@ class TestCalculateNextPeriod:
         assert period_start == date(2024, 12, 1)
         assert period_end == date(2024, 12, 31)
         assert due_date == date(2024, 12, 15)
-        assert window_end == date(2024, 12, 18)
+        # Inclusive 3-day window: 15th-17th
+        assert window_end == date(2024, 12, 17)
 
 
 # =============================================================================
