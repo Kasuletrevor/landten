@@ -688,9 +688,9 @@ class TestWorkflow4MultiTenantProperty:
         )
         summary_data = summary_response.json()
         # 3 paid on time + 1 paid late = 4 total paid this month
-        assert summary_data["total_paid_this_month"] == 4
+        assert summary_data["paid_count"] == 4
         # 1 tenant still pending
-        assert summary_data["total_pending"] == 1
+        assert summary_data["pending_count"] == 1
 
 
 # =============================================================================
