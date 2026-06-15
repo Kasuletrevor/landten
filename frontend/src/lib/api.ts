@@ -476,7 +476,7 @@ class ApiClient {
   async waivePayment(id: string, reason: string) {
     return this.request<Payment>(`/payments/${id}/waive`, {
       method: "PUT",
-      body: JSON.stringify({ reason }),
+      body: JSON.stringify({ notes: reason }),
     });
   }
 
