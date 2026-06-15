@@ -29,7 +29,7 @@ export function AddTenantModal({
   });
   const [scheduleData, setScheduleData] = useState({
     amount: 0,
-    frequency: "BI_MONTHLY",
+    frequency: "bi_monthly",
     due_day: 1,
     window_days: 5,
     start_date: new Date().toISOString().split("T")[0],
@@ -262,9 +262,9 @@ export function AddTenantModal({
                     }
                     className="input"
                   >
-                    <option value="MONTHLY">Monthly</option>
-                    <option value="BI_MONTHLY">Bi-Monthly</option>
-                    <option value="QUARTERLY">Quarterly</option>
+                    <option value="monthly">Monthly</option>
+                    <option value="bi_monthly">Bi-Monthly</option>
+                    <option value="quarterly">Quarterly</option>
                   </select>
                 </div>
               </div>
