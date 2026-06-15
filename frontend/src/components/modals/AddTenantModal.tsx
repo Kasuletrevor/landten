@@ -34,6 +34,7 @@ export function AddTenantModal({
     window_days: 5,
     start_date: new Date().toISOString().split("T")[0],
   });
+  const [startDateManuallyEdited, setStartDateManuallyEdited] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -221,9 +222,13 @@ export function AddTenantModal({
                 <input
                   type="date"
                   value={formData.move_in_date}
-                  onChange={(e) =>
-                    setFormData((prev) => ({ ...prev, move_in_date: e.target.value }))
-                  }
+                  onChange={(e) => {
+                    const moveInDate = e.target.value;
+                    setFormData((prev) => ({ ...prev, move_in_date: moveInDate }));
+                    if (!startDateManuallyEdited) {
+                      setScheduleData((prev) => ({ ...prev, start_date: moveInDate }));
+                    }
+                  }}
                   className="input"
                   required
                 />
@@ -248,7 +253,7 @@ export function AddTenantModal({
                         }))
                       }
                       className="input !pl-16"
-                      min="0"
+                      min="1"
                       required
                     />
                   </div>
@@ -302,7 +307,7 @@ export function AddTenantModal({
                       }))
                     }
                     className="input"
-                    min="0"
+                    min="1"
                     max="15"
                   />
                   <p className="text-xs text-[var(--text-muted)] mt-1">
@@ -316,9 +321,10 @@ export function AddTenantModal({
                 <input
                   type="date"
                   value={scheduleData.start_date}
-                  onChange={(e) =>
-                    setScheduleData((prev) => ({ ...prev, start_date: e.target.value }))
-                  }
+                  onChange={(e) => {
+                    setScheduleData((prev) => ({ ...prev, start_date: e.target.value }));
+                    setStartDateManuallyEdited(true);
+                  }}
                   className="input"
                   required
                 />
