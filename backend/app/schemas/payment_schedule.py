@@ -14,10 +14,10 @@ class PaymentScheduleCreate(BaseModel):
 
 
 class PaymentScheduleUpdate(BaseModel):
-    amount: Optional[float] = None
+    amount: Optional[float] = Field(default=None, gt=0)
     frequency: Optional[PaymentFrequency] = None
-    due_day: Optional[int] = None
-    window_days: Optional[int] = None
+    due_day: Optional[int] = Field(default=None, ge=1, le=28)
+    window_days: Optional[int] = Field(default=None, ge=1, le=15)
     is_active: Optional[bool] = None
 
 
