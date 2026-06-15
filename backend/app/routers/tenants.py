@@ -486,6 +486,12 @@ async def create_tenant_schedule(
     session.commit()
     session.refresh(schedule)
 
+    # Generate the first scheduled payment immediately so the payment appears
+    # in the landlord dashboard without waiting for a background job.
+    generate_payment_for_schedule(schedule, session, force=True)
+    session.commit()
+    session.refresh(schedule)
+
     return PaymentScheduleResponse.model_validate(schedule)
 
 
