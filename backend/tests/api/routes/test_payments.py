@@ -1004,3 +1004,58 @@ def test_summary_property_filter_scopes_to_landlord(
     )
 
     assert response.status_code == 404
+
+
+def test_summary_converts_mixed_currencies(
+    client: TestClient,
+    session: Session,
+    auth_landlord: Landlord,
+    auth_headers: dict,
+):
+    """Test that payment summary converts mixed room currencies to landlord currency."""
+    from tests.factories import PropertyFactory, RoomFactory
+
+    prop1 = PropertyFactory.create(session=session, landlord_id=auth_landlord.id)
+    room1 = RoomFactory.create(
+        session=session, property_id=prop1.id, rent_amount=100, currency="USD"
+    )
+    tenant1 = TenantFactory.create(session=session, room_id=room1.id)
+
+    prop2 = PropertyFactory.create(session=session, landlord_id=auth_landlord.id)
+    room2 = RoomFactory.create(
+        session=session, property_id=prop2.id, rent_amount=100000, currency="UGX"
+    )
+    tenant2 = TenantFactory.create(session=session, room_id=room2.id)
+
+    today = date.today()
+    schedule1 = PaymentScheduleFactory.create(session=session, tenant_id=tenant1.id)
+    schedule2 = PaymentScheduleFactory.create(session=session, tenant_id=tenant2.id)
+
+    PaymentFactory.create(
+        session=session,
+        tenant_id=tenant1.id,
+        schedule_id=schedule1.id,
+        status=PaymentStatus.PENDING,
+        due_date=today,
+        window_end_date=today + timedelta(days=5),
+        period_end=today + timedelta(days=30),
+        amount_due=100,
+    )
+    PaymentFactory.create(
+        session=session,
+        tenant_id=tenant2.id,
+        schedule_id=schedule2.id,
+        status=PaymentStatus.PENDING,
+        due_date=today,
+        window_end_date=today + timedelta(days=5),
+        period_end=today + timedelta(days=30),
+        amount_due=100000,
+    )
+
+    response = client.get("/api/payments/summary", headers=auth_headers)
+
+    assert response.status_code == 200
+    data = response.json()
+    # USD 100 -> UGX 375,000; UGX 100,000 -> UGX 100,000; total = 475,000
+    assert data["total_outstanding"] == 475000.0
+    assert data["pending_count"] == 2
