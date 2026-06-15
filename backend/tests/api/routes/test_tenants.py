@@ -1040,6 +1040,58 @@ def test_create_tenant_schedule_success(
     assert schedule is not None
 
 
+def test_create_tenant_schedule_normalizes_start_after_window(
+    client: TestClient,
+    session: Session,
+    auth_landlord: Landlord,
+    auth_headers: dict,
+    test_room: Room,
+):
+    """Test that a schedule created after the payment window starts next month."""
+    from unittest.mock import patch
+    from tests.factories import TenantFactory
+    from app.models.payment_schedule import PaymentSchedule
+    from app.models.payment import Payment, PaymentStatus
+
+    tenant = TenantFactory.create(session=session, room_id=test_room.id)
+
+    # June 15 is after the 1st-5th window, so the schedule should roll to July 1.
+    schedule_data = {
+        "amount": 1500000,
+        "frequency": "monthly",
+        "due_day": 1,
+        "window_days": 5,
+        "start_date": date(2024, 6, 15).isoformat(),
+    }
+
+    # Freeze "today" to the creation date so the first payment is not already
+    # past its window.
+    with patch("app.services.payment_service.date") as mock_date:
+        mock_date.today.return_value = date(2024, 6, 15)
+        mock_date.side_effect = lambda *args, **kwargs: date(*args, **kwargs)
+        response = client.post(
+            f"/api/tenants/{tenant.id}/schedule",
+            headers=auth_headers,
+            json=schedule_data,
+        )
+
+    assert response.status_code == 201
+    data = response.json()
+    assert data["start_date"] == date(2024, 7, 1).isoformat()
+
+    schedule = session.exec(
+        select(PaymentSchedule).where(PaymentSchedule.tenant_id == tenant.id)
+    ).first()
+    assert schedule.start_date == date(2024, 7, 1)
+
+    # The generated first payment should not be immediately overdue.
+    payment = session.exec(
+        select(Payment).where(Payment.schedule_id == schedule.id)
+    ).first()
+    assert payment is not None
+    assert payment.status != PaymentStatus.OVERDUE
+
+
 def test_create_tenant_schedule_already_exists(
     client: TestClient,
     session: Session,
