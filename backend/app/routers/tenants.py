@@ -1,8 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
 from typing import Optional
-from datetime import datetime, date, timezone
-from dateutil.relativedelta import relativedelta
+from datetime import datetime, timezone
 
 from app.core.database import get_session
 from app.core.security import (
@@ -36,6 +35,7 @@ from app.schemas.payment import PaymentResponse
 from app.services.payment_service import (
     create_prorated_payment,
     generate_payment_for_schedule,
+    normalize_schedule_start,
 )
 
 router = APIRouter(prefix="/tenants", tags=["Tenants"])
@@ -209,16 +209,12 @@ async def create_tenant(
         # Determine window days (explicit, from property, or default 5)
         window_days = tenant_data.payment_window_days or property.grace_period_days
 
-        # Calculate schedule start date
-        # If move-in is on 1st-5th, schedule starts this month
-        # If move-in is after 5th, schedule starts next month (1st)
-        move_in = tenant_data.move_in_date
-        if move_in.day <= 5:
-            schedule_start = date(move_in.year, move_in.month, 1)
-        else:
-            # Start from 1st of next month
-            next_month = move_in + relativedelta(months=1)
-            schedule_start = date(next_month.year, next_month.month, 1)
+        # Align schedule start so the first payment window is not already closed.
+        schedule_start = normalize_schedule_start(
+            tenant_data.move_in_date,
+            tenant_data.payment_due_day or 1,
+            window_days,
+        )
 
         # Create the payment schedule
         schedule = PaymentSchedule(
@@ -233,12 +229,12 @@ async def create_tenant(
         session.commit()
         session.refresh(schedule)
 
-        # Create prorated payment if move-in is after 5th
-        if move_in.day > 5:
+        # Create prorated payment if move-in is after the 5th of the month
+        if tenant_data.move_in_date.day > 5:
             prorated_payment = create_prorated_payment(
                 tenant_id=tenant.id,
                 monthly_rent=rent_amount,
-                move_in_date=move_in,
+                move_in_date=tenant_data.move_in_date,
                 session=session,
             )
 
@@ -474,13 +470,21 @@ async def create_tenant_schedule(
             detail="Tenant already has an active payment schedule",
         )
 
+    # Align the schedule start so the first payment window is not already
+    # closed when the landlord creates the schedule mid-month.
+    schedule_start = normalize_schedule_start(
+        schedule_data.start_date,
+        schedule_data.due_day,
+        schedule_data.window_days,
+    )
+
     schedule = PaymentSchedule(
         tenant_id=tenant_id,
         amount=schedule_data.amount,
         frequency=schedule_data.frequency,
         due_day=schedule_data.due_day,
         window_days=schedule_data.window_days,
-        start_date=schedule_data.start_date,
+        start_date=schedule_start,
     )
     session.add(schedule)
     session.commit()
