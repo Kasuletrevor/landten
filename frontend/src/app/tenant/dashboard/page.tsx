@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import api, { Payment, TenantPortalResponse, PaymentStatus, PaymentDispute, LeaseAgreement } from "@/lib/api";
+import { formatCurrency } from "@/lib/utils";
 import ReceiptUploadModal from "./ReceiptUploadModal";
 import TenantMaintenanceSection from "./TenantMaintenanceSection";
 import {
@@ -378,7 +379,7 @@ export default function TenantDashboardPage() {
          <TenantMaintenanceSection />
 
          {/* Lease Agreement Section */}
-         <LeaseSection />
+         <LeaseSection currency={tenant?.room_currency} />
        </main>
  
        {/* Upload Modal */}
@@ -406,7 +407,7 @@ export default function TenantDashboardPage() {
   );
 }
 
-function LeaseSection() {
+function LeaseSection({ currency }: { currency?: string }) {
   const [lease, setLease] = useState<LeaseAgreement | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
@@ -545,7 +546,7 @@ function LeaseSection() {
             <div>
               <p className="text-sm text-[var(--text-muted)]">Rent Amount</p>
               <p className="font-medium">
-                {formatCurrency(lease.rent_amount, tenant?.room_currency)}
+                {formatCurrency(lease.rent_amount, currency)}
               </p>
             </div>
           )}
