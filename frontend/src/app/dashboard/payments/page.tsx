@@ -26,6 +26,7 @@ import {
   Download,
 } from "lucide-react";
 import ExportModal from "./ExportModal";
+import { formatCurrency } from "@/lib/utils";
 
 export default function PaymentsPage() {
   const [payments, setPayments] = useState<PaymentWithTenant[]>([]);
@@ -82,14 +83,6 @@ export default function PaymentsPage() {
       payment.room_name?.toLowerCase().includes(q)
     );
   });
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-      minimumFractionDigits: 0,
-    }).format(amount);
-  };
 
   const formatDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleDateString("en-US", {
@@ -366,7 +359,7 @@ export default function PaymentsPage() {
                   <div className="grid grid-cols-2 gap-3 text-sm">
                     <div>
                       <p className="text-[var(--text-muted)] text-xs">Amount</p>
-                      <p className="font-semibold">{formatCurrency(payment.amount_due)}</p>
+                      <p className="font-semibold">{formatCurrency(payment.amount_due, payment.currency)}</p>
                     </div>
                     <div>
                       <p className="text-[var(--text-muted)] text-xs">Due Date</p>
@@ -483,7 +476,7 @@ export default function PaymentsPage() {
               <tbody>
                 {filteredPayments.map((payment, i) => {
                   const status = statusConfig[payment.status];
-                  const isPending = ["UPCOMING", "PENDING", "OVERDUE"].includes(payment.status);
+                  const isPending = ["upcoming", "pending", "overdue"].includes(payment.status);
 
                   return (
                     <tr
@@ -515,7 +508,7 @@ export default function PaymentsPage() {
                       </td>
                       <td>
                         <span className="font-semibold">
-                          {formatCurrency(payment.amount_due)}
+                          {formatCurrency(payment.amount_due, payment.currency)}
                         </span>
                       </td>
                       <td>
@@ -739,14 +732,6 @@ function MarkPaidModal({
     }
   };
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-      minimumFractionDigits: 0,
-    }).format(amount);
-  };
-
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -783,7 +768,7 @@ function MarkPaidModal({
               <div className="flex items-center justify-between pt-3 border-t border-[var(--border)]">
                 <span className="text-[var(--text-secondary)]">Amount Due</span>
                 <span className="text-xl font-bold" style={{ fontFamily: "var(--font-outfit)" }}>
-                  {formatCurrency(payment.amount_due)}
+                  {formatCurrency(payment.amount_due, payment.currency)}
                 </span>
               </div>
             </div>
@@ -880,14 +865,6 @@ function WaiveModal({
     }
   };
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-      minimumFractionDigits: 0,
-    }).format(amount);
-  };
-
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -915,7 +892,7 @@ function WaiveModal({
                   <p className="font-medium text-[var(--warning)]">This action cannot be undone</p>
                   <p className="text-sm text-[var(--text-secondary)] mt-1">
                     Waiving this payment will mark it as not required. The{" "}
-                    <strong>{formatCurrency(payment.amount_due)}</strong> will not be collected.
+                    <strong>{formatCurrency(payment.amount_due, payment.currency)}</strong> will not be collected.
                   </p>
                 </div>
               </div>
@@ -1130,14 +1107,6 @@ function RejectReceiptModal({
     }
   };
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-      minimumFractionDigits: 0,
-    }).format(amount);
-  };
-
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
@@ -1165,7 +1134,7 @@ function RejectReceiptModal({
                   <p className="font-medium text-[var(--error)]">Reject uploaded receipt</p>
                   <p className="text-sm text-[var(--text-secondary)] mt-1">
                     The tenant will be notified that their receipt for{" "}
-                    <strong>{formatCurrency(payment.amount_due)}</strong> was rejected and will need
+                    <strong>{formatCurrency(payment.amount_due, payment.currency)}</strong> was rejected and will need
                     to upload a new one.
                   </p>
                 </div>
