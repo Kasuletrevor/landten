@@ -7,6 +7,7 @@ from dateutil.relativedelta import relativedelta
 import mimetypes
 import logging
 
+from app.core.currency import convert_currency
 from app.core.database import get_session
 from app.core.security import (
     decode_token,
@@ -97,7 +98,8 @@ def _parse_payment_status_filters(raw_statuses: str) -> list[PaymentStatus]:
 
 def _resolve_receipt_file_path(receipt_url: str) -> str:
     """Resolve a receipt_url to a safe local file path."""
-    # We only support serving receipts from our mounted uploads path.
+    # Receipts are stored under uploads/receipts and served only through
+    # authenticated API endpoints (never mounted publicly).
     if not receipt_url or not receipt_url.startswith("/uploads/receipts/"):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Receipt not found"
@@ -188,8 +190,8 @@ def calculate_period_dates(
     # Due date is at the start of the period
     due_date = period_start
 
-    # Window end date
-    window_end_date = due_date + relativedelta(days=schedule.window_days)
+    # Window end date (inclusive: e.g. due_day=1 with window_days=5 -> 1st-5th)
+    window_end_date = due_date + relativedelta(days=schedule.window_days - 1)
 
     return period_start, period_end, due_date, window_end_date
 
@@ -321,6 +323,8 @@ async def list_payments(
     status_filter: Optional[PaymentStatus] = Query(None, alias="status"),
     property_id: Optional[str] = None,
     tenant_id: Optional[str] = None,
+    start_date: Optional[date] = Query(None, description="Filter payments from this due date (inclusive)"),
+    end_date: Optional[date] = Query(None, description="Filter payments up to this due date (inclusive)"),
     current_landlord: Landlord = Depends(get_current_landlord),
     session: Session = Depends(get_session),
 ):
@@ -359,6 +363,11 @@ async def list_payments(
         ]
         query = query.where(Payment.tenant_id.in_(property_tenant_ids))
 
+    if start_date:
+        query = query.where(Payment.due_date >= start_date)
+    if end_date:
+        query = query.where(Payment.due_date <= end_date)
+
     payments = session.exec(query.order_by(Payment.due_date.desc())).all()
 
     # Update statuses and filter
@@ -394,23 +403,42 @@ async def get_payment_summary(
     today = date.today()
     first_of_month = date(today.year, today.month, 1)
 
+    # If a property filter is supplied, verify it belongs to the landlord first.
+    if property_id:
+        property = session.get(Property, property_id)
+        if not property or property.landlord_id != current_landlord.id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Property not found"
+            )
+
     tenant_ids = get_landlord_tenant_ids(current_landlord.id, session)
     if not tenant_ids:
         return PaymentSummary()
 
-    # Filter by property if specified
+    # Filter by property if specified.
     if property_id:
         rooms = session.exec(select(Room).where(Room.property_id == property_id)).all()
         room_ids = [r.id for r in rooms]
-        tenant_ids = [
+        property_tenant_ids = {
             t.id
             for t in session.exec(
                 select(Tenant).where(Tenant.room_id.in_(room_ids))
             ).all()
-        ]
+        }
+        # Intersect with landlord's tenant scope.
+        tenant_ids = list(set(tenant_ids) & property_tenant_ids)
 
     if not tenant_ids:
         return PaymentSummary()
+
+    # Get tenants and rooms so we can convert mixed-currency payments into the
+    # landlord's primary currency before summing.
+    tenants = session.exec(select(Tenant).where(Tenant.id.in_(tenant_ids))).all()
+    tenant_room_map = {t.id: t.room_id for t in tenants}
+    room_ids = [rid for rid in tenant_room_map.values() if rid]
+    rooms = session.exec(select(Room).where(Room.id.in_(room_ids))).all() if room_ids else []
+    room_currency_map = {r.id: r.currency for r in rooms}
+    target_currency = current_landlord.primary_currency or "UGX"
 
     # Get all payments for these tenants
     payments = session.exec(
@@ -422,9 +450,10 @@ async def get_payment_summary(
     pending = 0
     overdue = 0
     paid_count = 0
-    total_expected = 0
-    total_received = 0
-    total_outstanding = 0
+    total_expected = 0.0
+    total_received = 0.0
+    total_outstanding = 0.0
+    total_overdue = 0.0
 
     for payment in payments:
         # Update status
@@ -434,23 +463,27 @@ async def get_payment_summary(
             payment.updated_at = datetime.now(timezone.utc)
             session.add(payment)
 
+        room_id = tenant_room_map.get(payment.tenant_id)
+        payment_currency = room_currency_map.get(room_id, "UGX") if room_id else "UGX"
+        amount = convert_currency(payment.amount_due, payment_currency, target_currency)
+
         if payment.status == PaymentStatus.UPCOMING:
             upcoming += 1
-            total_expected += 1
-            total_outstanding += 1
+            total_expected += amount
+            total_outstanding += amount
         elif payment.status == PaymentStatus.PENDING:
             pending += 1
-            total_expected += 1
-            total_outstanding += 1
+            total_expected += amount
+            total_outstanding += amount
         elif payment.status == PaymentStatus.OVERDUE:
             overdue += 1
-            total_expected += 1
-            total_outstanding += 1
+            total_expected += amount
+            total_outstanding += amount
+            total_overdue += amount
         elif payment.status in [PaymentStatus.ON_TIME, PaymentStatus.LATE]:
             paid_count += 1
-            total_received += 1
-            if payment.status == PaymentStatus.LATE:
-                total_expected += 1
+            total_received += amount
+            total_expected += amount
 
     session.commit()
 
@@ -458,7 +491,7 @@ async def get_payment_summary(
         total_expected=total_expected,
         total_received=total_received,
         total_outstanding=total_outstanding,
-        total_overdue=overdue,
+        total_overdue=total_overdue,
         upcoming_count=upcoming,
         pending_count=pending,
         overdue_count=overdue,
@@ -469,6 +502,7 @@ async def get_payment_summary(
 @router.get("/upcoming", response_model=PaymentListResponse)
 async def get_upcoming_payments(
     days: int = Query(30, ge=1, le=90),
+    property_id: Optional[str] = Query(None, description="Filter by property ID"),
     current_landlord: Landlord = Depends(get_current_landlord),
     session: Session = Depends(get_session),
 ):
@@ -479,6 +513,26 @@ async def get_upcoming_payments(
     end_date = today + relativedelta(days=days)
 
     tenant_ids = get_landlord_tenant_ids(current_landlord.id, session)
+    if not tenant_ids:
+        return PaymentListResponse(payments=[], total=0)
+
+    # Apply property filter, verifying the property belongs to the landlord.
+    if property_id:
+        property = session.get(Property, property_id)
+        if not property or property.landlord_id != current_landlord.id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Property not found"
+            )
+        rooms = session.exec(select(Room).where(Room.property_id == property_id)).all()
+        room_ids = [r.id for r in rooms]
+        property_tenant_ids = {
+            t.id
+            for t in session.exec(
+                select(Tenant).where(Tenant.room_id.in_(room_ids))
+            ).all()
+        }
+        tenant_ids = list(set(tenant_ids) & property_tenant_ids)
+
     if not tenant_ids:
         return PaymentListResponse(payments=[], total=0)
 
@@ -639,6 +693,7 @@ async def export_payments(
 
 @router.get("/overdue", response_model=PaymentListResponse)
 async def get_overdue_payments(
+    property_id: Optional[str] = Query(None, description="Filter by property ID"),
     current_landlord: Landlord = Depends(get_current_landlord),
     session: Session = Depends(get_session),
 ):
@@ -651,6 +706,26 @@ async def get_overdue_payments(
     if not tenant_ids:
         return PaymentListResponse(payments=[], total=0)
 
+    # Apply property filter, verifying the property belongs to the landlord.
+    if property_id:
+        property = session.get(Property, property_id)
+        if not property or property.landlord_id != current_landlord.id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Property not found"
+            )
+        rooms = session.exec(select(Room).where(Room.property_id == property_id)).all()
+        room_ids = [r.id for r in rooms]
+        property_tenant_ids = {
+            t.id
+            for t in session.exec(
+                select(Tenant).where(Tenant.room_id.in_(room_ids))
+            ).all()
+        }
+        tenant_ids = list(set(tenant_ids) & property_tenant_ids)
+
+    if not tenant_ids:
+        return PaymentListResponse(payments=[], total=0)
+
     # Get payments past their window
     payments = session.exec(
         select(Payment)
@@ -658,7 +733,12 @@ async def get_overdue_payments(
             Payment.tenant_id.in_(tenant_ids),
             Payment.window_end_date < today,
             Payment.status.notin_(
-                [PaymentStatus.ON_TIME, PaymentStatus.LATE, PaymentStatus.WAIVED]
+                [
+                    PaymentStatus.ON_TIME,
+                    PaymentStatus.LATE,
+                    PaymentStatus.WAIVED,
+                    PaymentStatus.VERIFYING,
+                ]
             ),
         )
         .order_by(Payment.due_date)
@@ -907,8 +987,8 @@ async def create_manual_payment(
             status_code=status.HTTP_404_NOT_FOUND, detail="Tenant not found"
         )
 
-    # Calculate window end (use default 5 days)
-    window_end_date = payment_data.due_date + relativedelta(days=5)
+    # Calculate window end (use default 5-day inclusive window)
+    window_end_date = payment_data.due_date + relativedelta(days=4)
 
     payment = Payment(
         tenant_id=payment_data.tenant_id,
@@ -995,9 +1075,8 @@ async def upload_payment_receipt(
             detail=f"Could not save file: {str(e)}",
         )
 
-    # Update payment record
-    # Construct URL relative to base URL (client handles full URL construction)
-    # We mounted "uploads" in main.py so this is accessible via /uploads/...
+    # Update payment record.  The URL is a storage identifier only; receipts
+    # are served through the authenticated /payments/{id}/receipt endpoint.
     payment.receipt_url = f"/uploads/receipts/{filename}"
     payment.status = PaymentStatus.VERIFYING
     payment.updated_at = datetime.now(timezone.utc)

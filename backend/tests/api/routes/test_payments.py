@@ -8,7 +8,7 @@ import os
 from datetime import date, timedelta
 from unittest.mock import AsyncMock, patch
 from fastapi.testclient import TestClient
-from sqlmodel import Session
+from sqlmodel import Session, select
 
 from app.models.landlord import Landlord
 from app.models.tenant import Tenant
@@ -408,6 +408,54 @@ def test_get_upcoming_payments(
         assert days_until <= 30
 
 
+def test_get_upcoming_payments_with_property_filter(
+    client: TestClient,
+    session: Session,
+    auth_landlord: Landlord,
+    auth_headers: dict,
+):
+    """Test that upcoming endpoint respects property_id filter."""
+    property1 = PropertyFactory.create(
+        session=session, landlord_id=auth_landlord.id, name="Property 1"
+    )
+    room1 = RoomFactory.create(session=session, property_id=property1.id)
+    tenant1 = TenantFactory.create(session=session, room_id=room1.id)
+
+    property2 = PropertyFactory.create(
+        session=session, landlord_id=auth_landlord.id, name="Property 2"
+    )
+    room2 = RoomFactory.create(session=session, property_id=property2.id)
+    tenant2 = TenantFactory.create(session=session, room_id=room2.id)
+
+    today = date.today()
+    schedule1 = PaymentScheduleFactory.create(session=session, tenant_id=tenant1.id)
+    schedule2 = PaymentScheduleFactory.create(session=session, tenant_id=tenant2.id)
+
+    PaymentFactory.create(
+        session=session,
+        tenant_id=tenant1.id,
+        schedule_id=schedule1.id,
+        status=PaymentStatus.UPCOMING,
+        due_date=today + timedelta(days=7),
+    )
+    PaymentFactory.create(
+        session=session,
+        tenant_id=tenant2.id,
+        schedule_id=schedule2.id,
+        status=PaymentStatus.UPCOMING,
+        due_date=today + timedelta(days=7),
+    )
+
+    response = client.get(
+        f"/api/payments/upcoming?days=30&property_id={property1.id}",
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 1
+
+
 def test_get_overdue_payments(
     client: TestClient,
     session: Session,
@@ -444,6 +492,91 @@ def test_get_overdue_payments(
             "pending",
             "upcoming",
         ]  # Status gets updated
+
+
+def test_get_overdue_payments_preserves_verifying(
+    client: TestClient,
+    session: Session,
+    auth_landlord: Landlord,
+    auth_headers: dict,
+):
+    """Test that VERIFYING payments are not overwritten by the overdue endpoint."""
+    prop = PropertyFactory.create(session=session, landlord_id=auth_landlord.id)
+    room = RoomFactory.create(session=session, property_id=prop.id)
+    tenant = TenantFactory.create(session=session, room_id=room.id)
+
+    today = date.today()
+    schedule = PaymentScheduleFactory.create(session=session, tenant_id=tenant.id)
+
+    PaymentFactory.create(
+        session=session,
+        tenant_id=tenant.id,
+        schedule_id=schedule.id,
+        status=PaymentStatus.VERIFYING,
+        due_date=today - timedelta(days=15),
+        window_end_date=today - timedelta(days=10),
+    )
+
+    response = client.get("/api/payments/overdue", headers=auth_headers)
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 0
+    # Verify the payment is still VERIFYING in the database
+    db_payment = session.exec(
+        select(Payment).where(Payment.tenant_id == tenant.id)
+    ).first()
+    assert db_payment.status == PaymentStatus.VERIFYING
+
+
+def test_get_overdue_payments_with_property_filter(
+    client: TestClient,
+    session: Session,
+    auth_landlord: Landlord,
+    auth_headers: dict,
+):
+    """Test that overdue endpoint respects property_id filter."""
+    property1 = PropertyFactory.create(
+        session=session, landlord_id=auth_landlord.id, name="Property 1"
+    )
+    room1 = RoomFactory.create(session=session, property_id=property1.id)
+    tenant1 = TenantFactory.create(session=session, room_id=room1.id)
+
+    property2 = PropertyFactory.create(
+        session=session, landlord_id=auth_landlord.id, name="Property 2"
+    )
+    room2 = RoomFactory.create(session=session, property_id=property2.id)
+    tenant2 = TenantFactory.create(session=session, room_id=room2.id)
+
+    today = date.today()
+    schedule1 = PaymentScheduleFactory.create(session=session, tenant_id=tenant1.id)
+    schedule2 = PaymentScheduleFactory.create(session=session, tenant_id=tenant2.id)
+
+    PaymentFactory.create(
+        session=session,
+        tenant_id=tenant1.id,
+        schedule_id=schedule1.id,
+        status=PaymentStatus.OVERDUE,
+        due_date=today - timedelta(days=15),
+        window_end_date=today - timedelta(days=10),
+    )
+    PaymentFactory.create(
+        session=session,
+        tenant_id=tenant2.id,
+        schedule_id=schedule2.id,
+        status=PaymentStatus.OVERDUE,
+        due_date=today - timedelta(days=15),
+        window_end_date=today - timedelta(days=10),
+    )
+
+    response = client.get(
+        f"/api/payments/overdue?property_id={property1.id}",
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total"] == 1
 
 
 # =============================================================================
@@ -691,6 +824,40 @@ def test_waive_without_notes(
     assert data["status"].lower() == "waived"
 
 
+def test_waive_saves_notes(
+    client: TestClient,
+    session: Session,
+    auth_landlord: Landlord,
+    auth_headers: dict,
+):
+    """Test that the waiver reason/notes are persisted on the payment."""
+    prop = PropertyFactory.create(session=session, landlord_id=auth_landlord.id)
+    room = RoomFactory.create(session=session, property_id=prop.id)
+    tenant = TenantFactory.create(session=session, room_id=room.id)
+
+    schedule = PaymentScheduleFactory.create(session=session, tenant_id=tenant.id)
+    payment = PaymentFactory.create(
+        session=session,
+        tenant_id=tenant.id,
+        schedule_id=schedule.id,
+        status=PaymentStatus.PENDING,
+    )
+
+    response = client.put(
+        f"/api/payments/{payment.id}/waive",
+        headers=auth_headers,
+        json={"notes": "Tenant lost their job"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"].lower() == "waived"
+    assert data["notes"] == "Tenant lost their job"
+
+    session.refresh(payment)
+    assert payment.notes == "Tenant lost their job"
+
+
 def test_list_payments_with_property_filter(
     client: TestClient,
     session: Session,
@@ -811,5 +978,84 @@ def test_summary_with_property_filter(
     data = response.json()
 
     # Should only include payments from property1
-    assert data["amount_outstanding"] == 100000
-    assert data["total_pending"] == 1
+    assert data["total_outstanding"] == 100000
+    assert data["pending_count"] == 1
+
+
+def test_summary_property_filter_scopes_to_landlord(
+    client: TestClient,
+    session: Session,
+    auth_landlord: Landlord,
+    auth_headers: dict,
+):
+    """Test that summary property filter cannot access another landlord's property."""
+    from tests.factories import LandlordFactory
+
+    other_landlord = LandlordFactory.create(
+        session=session, email="other-summary@test.com"
+    )
+    other_property = PropertyFactory.create(
+        session=session, landlord_id=other_landlord.id, name="Other Property"
+    )
+
+    response = client.get(
+        f"/api/payments/summary?property_id={other_property.id}",
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 404
+
+
+def test_summary_converts_mixed_currencies(
+    client: TestClient,
+    session: Session,
+    auth_landlord: Landlord,
+    auth_headers: dict,
+):
+    """Test that payment summary converts mixed room currencies to landlord currency."""
+    from tests.factories import PropertyFactory, RoomFactory
+
+    prop1 = PropertyFactory.create(session=session, landlord_id=auth_landlord.id)
+    room1 = RoomFactory.create(
+        session=session, property_id=prop1.id, rent_amount=100, currency="USD"
+    )
+    tenant1 = TenantFactory.create(session=session, room_id=room1.id)
+
+    prop2 = PropertyFactory.create(session=session, landlord_id=auth_landlord.id)
+    room2 = RoomFactory.create(
+        session=session, property_id=prop2.id, rent_amount=100000, currency="UGX"
+    )
+    tenant2 = TenantFactory.create(session=session, room_id=room2.id)
+
+    today = date.today()
+    schedule1 = PaymentScheduleFactory.create(session=session, tenant_id=tenant1.id)
+    schedule2 = PaymentScheduleFactory.create(session=session, tenant_id=tenant2.id)
+
+    PaymentFactory.create(
+        session=session,
+        tenant_id=tenant1.id,
+        schedule_id=schedule1.id,
+        status=PaymentStatus.PENDING,
+        due_date=today,
+        window_end_date=today + timedelta(days=5),
+        period_end=today + timedelta(days=30),
+        amount_due=100,
+    )
+    PaymentFactory.create(
+        session=session,
+        tenant_id=tenant2.id,
+        schedule_id=schedule2.id,
+        status=PaymentStatus.PENDING,
+        due_date=today,
+        window_end_date=today + timedelta(days=5),
+        period_end=today + timedelta(days=30),
+        amount_due=100000,
+    )
+
+    response = client.get("/api/payments/summary", headers=auth_headers)
+
+    assert response.status_code == 200
+    data = response.json()
+    # USD 100 -> UGX 375,000; UGX 100,000 -> UGX 100,000; total = 475,000
+    assert data["total_outstanding"] == 475000.0
+    assert data["pending_count"] == 2

@@ -1,15 +1,18 @@
 import { useState } from "react";
 import api, { Payment } from "@/lib/api";
+import { formatCurrency } from "@/lib/utils";
 import { Upload, X, CheckCircle, AlertCircle } from "lucide-react";
 
 interface ReceiptUploadModalProps {
   payment: Payment;
+  currency?: string;
   onClose: () => void;
   onSuccess: (payment: Payment) => void;
 }
 
 export default function ReceiptUploadModal({
   payment,
+  currency,
   onClose,
   onSuccess,
 }: ReceiptUploadModalProps) {
@@ -70,7 +73,7 @@ export default function ReceiptUploadModal({
                  <p className="text-sm text-[var(--primary-700)] font-medium mb-1">Payment Details</p>
                  <div className="flex justify-between items-center">
                     <span className="text-2xl font-bold text-[var(--primary-900)]">
-                        {new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(payment.amount_due)}
+                         {formatCurrency(payment.amount_due, currency)}
                     </span>
                     <span className="text-xs bg-white/50 px-2 py-1 rounded-md text-[var(--primary-800)]">
                         Due: {new Date(payment.due_date).toLocaleDateString()}

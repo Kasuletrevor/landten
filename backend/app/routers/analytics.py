@@ -5,13 +5,14 @@ Provides aggregated statistics across properties, payments, and vacancies.
 
 from fastapi import APIRouter, Depends
 from sqlmodel import Session, select
-from datetime import date
+from datetime import date, datetime, timezone
 from dateutil.relativedelta import relativedelta
 from typing import List, Dict
 
 from app.core.database import get_session
 from app.core.security import get_current_landlord
 from app.core.currency import convert_currency
+from app.routers.payments import update_payment_status
 from app.models.landlord import Landlord
 from app.models.property import Property
 from app.models.room import Room
@@ -248,6 +249,16 @@ async def get_dashboard_analytics(
 
     # Get current date info
     today = date.today()
+
+    # Refresh payment statuses before aggregating analytics so dashboards
+    # reflect the current date instead of stale scheduled values.
+    for payment in payments:
+        new_status = update_payment_status(payment, today)
+        if new_status != payment.status:
+            payment.status = new_status
+            payment.updated_at = datetime.now(timezone.utc)
+            session.add(payment)
+    session.commit()
     current_year = today.year
     current_month = today.month
 

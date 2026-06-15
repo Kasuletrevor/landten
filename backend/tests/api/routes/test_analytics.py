@@ -6,7 +6,7 @@ Tests all dashboard analytics endpoints and helper functions.
 import pytest
 from datetime import date, timedelta
 from fastapi.testclient import TestClient
-from sqlmodel import Session
+from sqlmodel import Session, select
 from dateutil.relativedelta import relativedelta
 
 from app.models.landlord import Landlord
@@ -123,6 +123,51 @@ def test_dashboard_includes_current_month_stats(
     assert current_month["received"] == 0.0
     assert current_month["outstanding"] == 1000000.0
     assert current_month["collection_rate"] == 0.0
+
+
+def test_dashboard_updates_stale_payment_statuses(
+    client: TestClient,
+    session: Session,
+    auth_landlord: Landlord,
+    auth_headers: dict,
+):
+    """Test that dashboard refreshes payment statuses before aggregating stats."""
+    prop = PropertyFactory.create(session=session, landlord_id=auth_landlord.id)
+    room = RoomFactory.create(
+        session=session,
+        property_id=prop.id,
+        rent_amount=1000000,
+        currency="UGX",
+        is_occupied=True,
+    )
+    tenant = TenantFactory.create(session=session, room_id=room.id)
+
+    today = date.today()
+    # Create a payment that was stored as UPCOMING but whose window has already
+    # closed, so it should be counted as overdue on the dashboard.
+    PaymentFactory.create(
+        session=session,
+        tenant_id=tenant.id,
+        amount_due=1000000,
+        due_date=today - timedelta(days=15),
+        window_end_date=today - timedelta(days=10),
+        status=PaymentStatus.UPCOMING,
+    )
+
+    response = client.get("/api/analytics/dashboard", headers=auth_headers)
+
+    assert response.status_code == 200
+    data = response.json()
+
+    overdue = data["overdue_summary"]
+    assert overdue["count"] == 1
+    assert overdue["total_amount"] == 1000000.0
+
+    # The payment should have been persisted as OVERDUE.
+    db_payment = session.exec(
+        select(Payment).where(Payment.tenant_id == tenant.id)
+    ).first()
+    assert db_payment.status == PaymentStatus.OVERDUE
 
 
 def test_dashboard_includes_three_month_trend(
@@ -1499,6 +1544,7 @@ def test_dashboard_complete_with_overdue_and_vacancy(
         tenant_id=tenant2.id,
         amount_due=800000,
         due_date=date(today.year, today.month, 1),
+        window_end_date=today + timedelta(days=5),
         status=PaymentStatus.PENDING,
     )
 

@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import datetime, date
 from app.models.payment_schedule import PaymentFrequency
@@ -6,18 +6,18 @@ from app.models.payment_schedule import PaymentFrequency
 
 # Request schemas
 class PaymentScheduleCreate(BaseModel):
-    amount: float
-    frequency: PaymentFrequency = PaymentFrequency.MONTHLY
-    due_day: int = 1  # 1-28
-    window_days: int = 5
+    amount: float = Field(..., gt=0)
+    frequency: PaymentFrequency = PaymentFrequency.BI_MONTHLY
+    due_day: int = Field(default=1, ge=1, le=28)
+    window_days: int = Field(default=5, ge=1, le=15)
     start_date: date
 
 
 class PaymentScheduleUpdate(BaseModel):
-    amount: Optional[float] = None
+    amount: Optional[float] = Field(default=None, gt=0)
     frequency: Optional[PaymentFrequency] = None
-    due_day: Optional[int] = None
-    window_days: Optional[int] = None
+    due_day: Optional[int] = Field(default=None, ge=1, le=28)
+    window_days: Optional[int] = Field(default=None, ge=1, le=15)
     is_active: Optional[bool] = None
 
 

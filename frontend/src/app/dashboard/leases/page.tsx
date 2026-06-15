@@ -7,6 +7,7 @@ import api, {
   PropertyWithStats,
   TenantWithDetails,
 } from "@/lib/api";
+import { formatCurrency } from "@/lib/utils";
 import {
   FileText,
   Upload,
@@ -68,15 +69,6 @@ export default function LeasesPage() {
       lease.room_name?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const formatCurrency = (amount: number) => {
-    if (!amount) return "-";
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: "USD",
-      minimumFractionDigits: 0,
-    }).format(amount);
-  };
-
   const formatDate = (dateStr?: string) => {
     if (!dateStr) return "-";
     return new Date(dateStr).toLocaleDateString("en-US", {
@@ -86,10 +78,37 @@ export default function LeasesPage() {
     });
   };
 
-  const openLeaseUrl = (url?: string) => {
-    if (!url) return;
-    const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000/api";
-    window.open(`${apiBase}${url}`, "_blank");
+  const openDownload = async (downloadPromise: Promise<Blob>, filename: string) => {
+    try {
+      const blob = await downloadPromise;
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Failed to download lease:", error);
+      alert("Failed to download lease file. Please try again.");
+    }
+  };
+
+  const openOriginalLease = (lease: LeaseAgreementWithTenant) => {
+    if (!lease.original_url) return;
+    void openDownload(
+      api.downloadOriginalLease(lease.id),
+      `${lease.tenant_name || "lease"}_original.pdf`
+    );
+  };
+
+  const openSignedLease = (lease: LeaseAgreementWithTenant) => {
+    if (!lease.signed_url) return;
+    void openDownload(
+      api.downloadSignedLease(lease.id),
+      `${lease.tenant_name || "lease"}_signed.pdf`
+    );
   };
 
   const statusConfig = {
@@ -355,7 +374,7 @@ export default function LeasesPage() {
 
                   <div className="grid grid-cols-2 gap-2 pt-1">
                     <button
-                      onClick={() => openLeaseUrl(lease.original_url)}
+                      onClick={() => openOriginalLease(lease)}
                       className="btn btn-secondary min-h-11"
                       title="View Original"
                     >
@@ -373,7 +392,7 @@ export default function LeasesPage() {
                       </button>
                     ) : (
                       <button
-                        onClick={() => openLeaseUrl(lease.signed_url)}
+                        onClick={() => openSignedLease(lease)}
                         className="btn btn-secondary min-h-11"
                         title="View Signed"
                         disabled={!lease.signed_url}
@@ -470,7 +489,7 @@ export default function LeasesPage() {
                       <td>
                         <div className="flex items-center justify-end gap-1">
                           <button
-                            onClick={() => openLeaseUrl(lease.original_url)}
+                            onClick={() => openOriginalLease(lease)}
                             className="btn btn-sm btn-ghost min-h-11 min-w-11"
                             title="View Original"
                           >
@@ -487,7 +506,7 @@ export default function LeasesPage() {
                           )}
                           {lease.signed_url && (
                               <button
-                                onClick={() => openLeaseUrl(lease.signed_url)}
+                                onClick={() => openSignedLease(lease)}
                                 className="btn btn-sm btn-ghost text-[var(--success)] min-h-11 min-w-11"
                                 title="View Signed"
                               >

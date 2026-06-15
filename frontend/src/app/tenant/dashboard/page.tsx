@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import api, { Payment, TenantPortalResponse, PaymentStatus, PaymentDispute, LeaseAgreement } from "@/lib/api";
+import { formatCurrency } from "@/lib/utils";
 import ReceiptUploadModal from "./ReceiptUploadModal";
 import TenantMaintenanceSection from "./TenantMaintenanceSection";
 import {
@@ -251,7 +252,7 @@ export default function TenantDashboardPage() {
                  <Home className="w-6 h-6 text-[var(--primary-700)]" />
               </div>
               <div className="min-w-0">
-                 <p className="text-sm text-[var(--text-muted)]">Monthly Rent</p>
+                  <p className="text-sm text-[var(--text-muted)]">Rent Amount</p>
                  <p className="text-lg font-bold truncate">
                    {tenant.rent_amount ? formatCurrency(tenant.rent_amount) : tenant.room_name}
                  </p>
@@ -378,13 +379,14 @@ export default function TenantDashboardPage() {
          <TenantMaintenanceSection />
 
          {/* Lease Agreement Section */}
-         <LeaseSection />
+         <LeaseSection currency={tenant?.room_currency} />
        </main>
  
        {/* Upload Modal */}
       {uploadPayment && (
         <ReceiptUploadModal
           payment={uploadPayment}
+          currency={tenant?.room_currency}
           onClose={() => setUploadPayment(null)}
           onSuccess={(updatedPayment) => {
             setPayments(payments.map(p => p.id === updatedPayment.id ? updatedPayment : p));
@@ -405,7 +407,7 @@ export default function TenantDashboardPage() {
   );
 }
 
-function LeaseSection() {
+function LeaseSection({ currency }: { currency?: string }) {
   const [lease, setLease] = useState<LeaseAgreement | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
@@ -544,11 +546,7 @@ function LeaseSection() {
             <div>
               <p className="text-sm text-[var(--text-muted)]">Rent Amount</p>
               <p className="font-medium">
-                {new Intl.NumberFormat("en-US", {
-                  style: "currency",
-                  currency: "USD",
-                  minimumFractionDigits: 0,
-                }).format(lease.rent_amount)}
+                {formatCurrency(lease.rent_amount, currency)}
               </p>
             </div>
           )}

@@ -82,8 +82,8 @@ def create_prorated_payment(
         calendar.monthrange(move_in_date.year, move_in_date.month)[1],
     )
 
-    # Window end is 3 days after due date
-    window_end_date = due_date + relativedelta(days=3)
+    # Window end is 3 days after due date (inclusive: move-in day + 2 more days)
+    window_end_date = due_date + relativedelta(days=2)
 
     # Determine status based on current date
     today = date.today()
@@ -122,6 +122,30 @@ def get_frequency_months(frequency: PaymentFrequency) -> int:
     return 1
 
 
+def normalize_schedule_start(
+    start_date: date, due_day: int, window_days: int
+) -> date:
+    """
+    Align a schedule start date so the first payment window is not already closed.
+
+    If the supplied start_date falls after the payment window for that month,
+    push the schedule start to the first day of the next billing month.  This
+    prevents a newly-created schedule from immediately generating an overdue
+    payment when the landlord creates it mid-month.
+
+    The window is inclusive: [due_day, due_day + window_days - 1].
+    """
+    window_end_day = due_day + window_days - 1
+
+    # If we are still inside (or before) the window, start this month on the 1st.
+    if start_date.day <= window_end_day:
+        return date(start_date.year, start_date.month, 1)
+
+    # Otherwise start on the 1st of the next month.
+    next_month = start_date + relativedelta(months=1)
+    return date(next_month.year, next_month.month, 1)
+
+
 def calculate_next_period(
     schedule: PaymentSchedule, after_date: date
 ) -> tuple[date, date, date, date]:
@@ -151,7 +175,8 @@ def calculate_next_period(
     due_date = date(
         current_period_start.year, current_period_start.month, schedule.due_day
     )
-    window_end_date = due_date + relativedelta(days=schedule.window_days)
+    # Window is inclusive: e.g. due_day=1 with window_days=5 means 1st-5th.
+    window_end_date = due_date + relativedelta(days=schedule.window_days - 1)
 
     return current_period_start, period_end, due_date, window_end_date
 

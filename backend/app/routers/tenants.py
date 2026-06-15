@@ -1,8 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session, select
 from typing import Optional
-from datetime import datetime, date, timezone
-from dateutil.relativedelta import relativedelta
+from datetime import datetime, timezone
 
 from app.core.database import get_session
 from app.core.security import (
@@ -30,9 +29,13 @@ from app.schemas.payment_schedule import (
     PaymentScheduleUpdate,
     PaymentScheduleResponse,
 )
+from app.schemas.room import RoomResponse
+from app.schemas.property import PropertyResponse
+from app.schemas.payment import PaymentResponse
 from app.services.payment_service import (
     create_prorated_payment,
     generate_payment_for_schedule,
+    normalize_schedule_start,
 )
 
 router = APIRouter(prefix="/tenants", tags=["Tenants"])
@@ -130,6 +133,12 @@ async def list_tenants(
                 has_portal_access=tenant.password_hash is not None,
                 pending_payments=len(pending_count),
                 overdue_payments=len(overdue_count),
+                room=RoomResponse.model_validate(room) if room else None,
+                property=PropertyResponse.model_validate(property) if property else None,
+                payment_schedule=PaymentScheduleResponse.model_validate(schedule)
+                if schedule
+                else None,
+                payments=[],
             )
         )
 
@@ -150,7 +159,7 @@ async def create_tenant(
     By default (auto_create_schedule=True), automatically:
     1. Creates a payment schedule using the room's rent amount
     2. Uses the property's grace_period_days for the payment window
-    3. Creates a prorated payment if move-in is after the 5th of the month
+    3. Creates a prorated payment only if the first scheduled period is deferred
     4. Generates the first scheduled payment
 
     Set auto_create_schedule=False to skip automatic schedule creation.
@@ -200,22 +209,18 @@ async def create_tenant(
         # Determine window days (explicit, from property, or default 5)
         window_days = tenant_data.payment_window_days or property.grace_period_days
 
-        # Calculate schedule start date
-        # If move-in is on 1st-5th, schedule starts this month
-        # If move-in is after 5th, schedule starts next month (1st)
-        move_in = tenant_data.move_in_date
-        if move_in.day <= 5:
-            schedule_start = date(move_in.year, move_in.month, 1)
-        else:
-            # Start from 1st of next month
-            next_month = move_in + relativedelta(months=1)
-            schedule_start = date(next_month.year, next_month.month, 1)
+        # Align schedule start so the first payment window is not already closed.
+        schedule_start = normalize_schedule_start(
+            tenant_data.move_in_date,
+            tenant_data.payment_due_day or 1,
+            window_days,
+        )
 
         # Create the payment schedule
         schedule = PaymentSchedule(
             tenant_id=tenant.id,
             amount=rent_amount,
-            frequency=tenant_data.payment_frequency or PaymentFrequency.MONTHLY,
+            frequency=tenant_data.payment_frequency or PaymentFrequency.BI_MONTHLY,
             due_day=tenant_data.payment_due_day or 1,
             window_days=window_days,
             start_date=schedule_start,
@@ -224,12 +229,18 @@ async def create_tenant(
         session.commit()
         session.refresh(schedule)
 
-        # Create prorated payment if move-in is after 5th
-        if move_in.day > 5:
+        # Create a prorated payment only when the first scheduled period is
+        # deferred to a later month. This avoids double-charging when the
+        # scheduled payment already covers the move-in month.
+        schedule_deferred = (
+            schedule_start.year != tenant_data.move_in_date.year
+            or schedule_start.month != tenant_data.move_in_date.month
+        )
+        if schedule_deferred:
             prorated_payment = create_prorated_payment(
                 tenant_id=tenant.id,
                 monthly_rent=rent_amount,
-                move_in_date=move_in,
+                move_in_date=tenant_data.move_in_date,
                 session=session,
             )
 
@@ -242,13 +253,21 @@ async def create_tenant(
     return TenantWithDetails(
         **tenant.model_dump(),
         room_name=room.name,
-        property_id=property.id,
         property_name=property.name,
+        property_id=property.id,
         rent_amount=room.rent_amount,
         has_payment_schedule=schedule is not None,
         has_portal_access=tenant.password_hash is not None,
         pending_payments=1 if prorated_payment else 0,
         overdue_payments=0,
+        room=RoomResponse.model_validate(room),
+        property=PropertyResponse.model_validate(property),
+        payment_schedule=PaymentScheduleResponse.model_validate(schedule)
+        if schedule
+        else None,
+        payments=[PaymentResponse.model_validate(prorated_payment)]
+        if prorated_payment
+        else [],
     )
 
 
@@ -276,20 +295,17 @@ async def get_tenant(
         )
     ).first()
 
+    # Get payments for this tenant
+    payments = session.exec(
+        select(Payment).where(Payment.tenant_id == tenant.id)
+    ).all()
+
     # Count pending/overdue payments
     pending_count = len(
-        session.exec(
-            select(Payment).where(
-                Payment.tenant_id == tenant.id, Payment.status == PaymentStatus.PENDING
-            )
-        ).all()
+        [p for p in payments if p.status == PaymentStatus.PENDING]
     )
     overdue_count = len(
-        session.exec(
-            select(Payment).where(
-                Payment.tenant_id == tenant.id, Payment.status == PaymentStatus.OVERDUE
-            )
-        ).all()
+        [p for p in payments if p.status == PaymentStatus.OVERDUE]
     )
 
     return TenantWithDetails(
@@ -302,6 +318,12 @@ async def get_tenant(
         has_portal_access=tenant.password_hash is not None,
         pending_payments=pending_count,
         overdue_payments=overdue_count,
+        room=RoomResponse.model_validate(room),
+        property=PropertyResponse.model_validate(property),
+        payment_schedule=PaymentScheduleResponse.model_validate(schedule)
+        if schedule
+        else None,
+        payments=[PaymentResponse.model_validate(p) for p in payments],
     )
 
 
@@ -454,15 +476,29 @@ async def create_tenant_schedule(
             detail="Tenant already has an active payment schedule",
         )
 
+    # Align the schedule start so the first payment window is not already
+    # closed when the landlord creates the schedule mid-month.
+    schedule_start = normalize_schedule_start(
+        schedule_data.start_date,
+        schedule_data.due_day,
+        schedule_data.window_days,
+    )
+
     schedule = PaymentSchedule(
         tenant_id=tenant_id,
         amount=schedule_data.amount,
         frequency=schedule_data.frequency,
         due_day=schedule_data.due_day,
         window_days=schedule_data.window_days,
-        start_date=schedule_data.start_date,
+        start_date=schedule_start,
     )
     session.add(schedule)
+    session.commit()
+    session.refresh(schedule)
+
+    # Generate the first scheduled payment immediately so the payment appears
+    # in the landlord dashboard without waiting for a background job.
+    generate_payment_for_schedule(schedule, session, force=True)
     session.commit()
     session.refresh(schedule)
 

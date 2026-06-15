@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect } from "react";
 import api, { PropertyWithStats } from "@/lib/api";
+import { formatCurrency } from "@/lib/utils";
 import { X, ChevronRight } from "lucide-react";
 
 export function AddTenantModal({
@@ -29,11 +30,12 @@ export function AddTenantModal({
   });
   const [scheduleData, setScheduleData] = useState({
     amount: 0,
-    frequency: "BI_MONTHLY",
+    frequency: "bi_monthly",
     due_day: 1,
     window_days: 5,
     start_date: new Date().toISOString().split("T")[0],
   });
+  const [startDateManuallyEdited, setStartDateManuallyEdited] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -165,7 +167,7 @@ export function AddTenantModal({
                       <option value="" disabled>Select a room</option>
                       {rooms.map((room) => (
                         <option key={room.id} value={room.id}>
-                          {room.name} — {room.currency} {room.rent_amount.toLocaleString()}/month
+                          {room.name} — {formatCurrency(room.rent_amount, room.currency)}/period
                         </option>
                       ))}
                     </select>
@@ -221,9 +223,13 @@ export function AddTenantModal({
                 <input
                   type="date"
                   value={formData.move_in_date}
-                  onChange={(e) =>
-                    setFormData((prev) => ({ ...prev, move_in_date: e.target.value }))
-                  }
+                  onChange={(e) => {
+                    const moveInDate = e.target.value;
+                    setFormData((prev) => ({ ...prev, move_in_date: moveInDate }));
+                    if (!startDateManuallyEdited) {
+                      setScheduleData((prev) => ({ ...prev, start_date: moveInDate }));
+                    }
+                  }}
                   className="input"
                   required
                 />
@@ -248,7 +254,7 @@ export function AddTenantModal({
                         }))
                       }
                       className="input !pl-16"
-                      min="0"
+                      min="1"
                       required
                     />
                   </div>
@@ -262,9 +268,9 @@ export function AddTenantModal({
                     }
                     className="input"
                   >
-                    <option value="MONTHLY">Monthly</option>
-                    <option value="BI_MONTHLY">Bi-Monthly</option>
-                    <option value="QUARTERLY">Quarterly</option>
+                    <option value="monthly">Monthly</option>
+                    <option value="bi_monthly">Bi-Monthly</option>
+                    <option value="quarterly">Quarterly</option>
                   </select>
                 </div>
               </div>
@@ -302,7 +308,7 @@ export function AddTenantModal({
                       }))
                     }
                     className="input"
-                    min="0"
+                    min="1"
                     max="15"
                   />
                   <p className="text-xs text-[var(--text-muted)] mt-1">
@@ -316,9 +322,10 @@ export function AddTenantModal({
                 <input
                   type="date"
                   value={scheduleData.start_date}
-                  onChange={(e) =>
-                    setScheduleData((prev) => ({ ...prev, start_date: e.target.value }))
-                  }
+                  onChange={(e) => {
+                    setScheduleData((prev) => ({ ...prev, start_date: e.target.value }));
+                    setStartDateManuallyEdited(true);
+                  }}
                   className="input"
                   required
                 />

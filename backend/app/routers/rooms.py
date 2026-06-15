@@ -288,6 +288,14 @@ async def create_rooms_bulk(
         else:
             warnings.append(f"Rooms {gap_start}-{gap_end} have no price assigned.")
 
+    # Detect existing room names to avoid duplicates
+    existing_room_names = {
+        room.name
+        for room in session.exec(
+            select(Room).where(Room.property_id == property_id)
+        ).all()
+    }
+
     # Create rooms
     created_rooms = []
     for num in range(bulk_data.from_number, bulk_data.to_number + 1):
@@ -305,6 +313,11 @@ async def create_rooms_bulk(
 
         room_name = f"{bulk_data.prefix}{num_str}"
 
+        # Skip duplicates
+        if room_name in existing_room_names:
+            warnings.append(f"Room '{room_name}' already exists and was skipped.")
+            continue
+
         room = Room(
             property_id=property_id,
             name=room_name,
@@ -313,6 +326,7 @@ async def create_rooms_bulk(
         )
         session.add(room)
         created_rooms.append(room)
+        existing_room_names.add(room_name)
 
     session.commit()
 

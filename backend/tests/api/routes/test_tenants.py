@@ -322,7 +322,7 @@ def test_create_tenant_with_auto_schedule(
     ).first()
     assert schedule is not None
     assert schedule.amount == test_room.rent_amount
-    assert schedule.frequency == PaymentFrequency.MONTHLY
+    assert schedule.frequency == PaymentFrequency.BI_MONTHLY
 
     # Verify first payment was generated
     payment = session.exec(
@@ -330,6 +330,35 @@ def test_create_tenant_with_auto_schedule(
     ).first()
     assert payment is not None
     assert payment.amount_due == test_room.rent_amount
+
+
+def test_create_tenant_default_frequency_is_bi_monthly(
+    client: TestClient,
+    session: Session,
+    auth_landlord: Landlord,
+    auth_headers: dict,
+    test_property: Property,
+    test_room: Room,
+):
+    """Test that tenant schedule defaults to bi-monthly when not specified."""
+    from app.models.payment_schedule import PaymentSchedule
+
+    tenant_data = {
+        "room_id": test_room.id,
+        "name": "Default Frequency Tenant",
+        "email": "defaultfreq@example.com",
+        "move_in_date": date(2024, 1, 1).isoformat(),
+        "auto_create_schedule": True,
+    }
+
+    response = client.post("/api/tenants", headers=auth_headers, json=tenant_data)
+
+    assert response.status_code == 201
+    schedule = session.exec(
+        select(PaymentSchedule).where(PaymentSchedule.tenant_id == response.json()["id"])
+    ).first()
+    assert schedule is not None
+    assert schedule.frequency == PaymentFrequency.BI_MONTHLY
 
 
 def test_create_tenant_without_auto_schedule(
@@ -480,6 +509,46 @@ def test_create_tenant_no_proration_before_5th(
 
     assert len(payments) == 1
     assert payments[0].is_manual is False  # Not a manual prorated payment
+
+
+def test_create_tenant_no_overlap_when_schedule_starts_current_month(
+    client: TestClient,
+    session: Session,
+    auth_landlord: Landlord,
+    auth_headers: dict,
+    test_property: Property,
+    test_room: Room,
+):
+    """Test that a mid-month move-in within the window does not create a second prorated charge."""
+    from app.models.payment import Payment
+
+    # Move in on the 10th with due day 15 and a 5-day window (10th-19th).
+    # The schedule starts in the current month, so the scheduled payment already
+    # covers the period and no prorated manual payment should be created.
+    move_in_date = date(2024, 6, 10)
+
+    tenant_data = {
+        "room_id": test_room.id,
+        "name": "Mid-window Tenant",
+        "email": "midwindow@example.com",
+        "move_in_date": move_in_date.isoformat(),
+        "payment_due_day": 15,
+        "payment_window_days": 5,
+        "auto_create_schedule": True,
+    }
+
+    response = client.post("/api/tenants", headers=auth_headers, json=tenant_data)
+
+    assert response.status_code == 201
+    data = response.json()
+
+    payments = session.exec(
+        select(Payment).where(Payment.tenant_id == data["id"])
+    ).all()
+
+    # Only the scheduled payment should exist; no manual prorated payment.
+    assert len(payments) == 1
+    assert payments[0].is_manual is False
 
 
 def test_create_tenant_occupied_room_fails(
@@ -1040,6 +1109,58 @@ def test_create_tenant_schedule_success(
     assert schedule is not None
 
 
+def test_create_tenant_schedule_normalizes_start_after_window(
+    client: TestClient,
+    session: Session,
+    auth_landlord: Landlord,
+    auth_headers: dict,
+    test_room: Room,
+):
+    """Test that a schedule created after the payment window starts next month."""
+    from unittest.mock import patch
+    from tests.factories import TenantFactory
+    from app.models.payment_schedule import PaymentSchedule
+    from app.models.payment import Payment, PaymentStatus
+
+    tenant = TenantFactory.create(session=session, room_id=test_room.id)
+
+    # June 15 is after the 1st-5th window, so the schedule should roll to July 1.
+    schedule_data = {
+        "amount": 1500000,
+        "frequency": "monthly",
+        "due_day": 1,
+        "window_days": 5,
+        "start_date": date(2024, 6, 15).isoformat(),
+    }
+
+    # Freeze "today" to the creation date so the first payment is not already
+    # past its window.
+    with patch("app.services.payment_service.date") as mock_date:
+        mock_date.today.return_value = date(2024, 6, 15)
+        mock_date.side_effect = lambda *args, **kwargs: date(*args, **kwargs)
+        response = client.post(
+            f"/api/tenants/{tenant.id}/schedule",
+            headers=auth_headers,
+            json=schedule_data,
+        )
+
+    assert response.status_code == 201
+    data = response.json()
+    assert data["start_date"] == date(2024, 7, 1).isoformat()
+
+    schedule = session.exec(
+        select(PaymentSchedule).where(PaymentSchedule.tenant_id == tenant.id)
+    ).first()
+    assert schedule.start_date == date(2024, 7, 1)
+
+    # The generated first payment should not be immediately overdue.
+    payment = session.exec(
+        select(Payment).where(Payment.schedule_id == schedule.id)
+    ).first()
+    assert payment is not None
+    assert payment.status != PaymentStatus.OVERDUE
+
+
 def test_create_tenant_schedule_already_exists(
     client: TestClient,
     session: Session,
@@ -1085,6 +1206,87 @@ def test_create_tenant_schedule_not_found(client: TestClient, auth_headers: dict
         json=schedule_data,
     )
     assert response.status_code == 404
+
+
+def test_create_tenant_schedule_rejects_zero_window_days(
+    client: TestClient,
+    session: Session,
+    auth_landlord: Landlord,
+    auth_headers: dict,
+    test_room: Room,
+):
+    """Test that window_days must be at least 1."""
+    from tests.factories import TenantFactory
+
+    tenant = TenantFactory.create(session=session, room_id=test_room.id)
+
+    schedule_data = {
+        "amount": 1500000,
+        "frequency": "monthly",
+        "due_day": 1,
+        "window_days": 0,
+        "start_date": date(2024, 1, 1).isoformat(),
+    }
+
+    response = client.post(
+        f"/api/tenants/{tenant.id}/schedule", headers=auth_headers, json=schedule_data
+    )
+
+    assert response.status_code == 422
+
+
+def test_create_tenant_schedule_rejects_invalid_due_day(
+    client: TestClient,
+    session: Session,
+    auth_landlord: Landlord,
+    auth_headers: dict,
+    test_room: Room,
+):
+    """Test that due_day is constrained to 1-28."""
+    from tests.factories import TenantFactory
+
+    tenant = TenantFactory.create(session=session, room_id=test_room.id)
+
+    schedule_data = {
+        "amount": 1500000,
+        "frequency": "monthly",
+        "due_day": 31,
+        "window_days": 5,
+        "start_date": date(2024, 1, 1).isoformat(),
+    }
+
+    response = client.post(
+        f"/api/tenants/{tenant.id}/schedule", headers=auth_headers, json=schedule_data
+    )
+
+    assert response.status_code == 422
+
+
+def test_create_tenant_schedule_rejects_zero_amount(
+    client: TestClient,
+    session: Session,
+    auth_landlord: Landlord,
+    auth_headers: dict,
+    test_room: Room,
+):
+    """Test that schedule amount must be greater than 0."""
+    from tests.factories import TenantFactory
+
+    tenant = TenantFactory.create(session=session, room_id=test_room.id)
+
+    schedule_data = {
+        "amount": 0,
+        "frequency": "monthly",
+        "due_day": 1,
+        "window_days": 5,
+        "start_date": date(2024, 1, 1).isoformat(),
+    }
+
+    response = client.post(
+        f"/api/tenants/{tenant.id}/schedule", headers=auth_headers, json=schedule_data
+    )
+
+    assert response.status_code == 422
 
 
 def test_update_tenant_schedule_success(
@@ -1438,6 +1640,7 @@ def test_create_tenant_different_frequencies(
             "email": f"{freq}@example.com",
             "move_in_date": date(2024, 1, 1).isoformat(),
             "payment_frequency": freq,
+            "auto_create_schedule": True,
         }
 
         response = client.post("/api/tenants", headers=auth_headers, json=tenant_data)
@@ -1539,6 +1742,7 @@ def test_create_tenant_custom_due_day(
         "email": "customdue@example.com",
         "move_in_date": date(2024, 1, 1).isoformat(),
         "payment_due_day": 15,  # 15th of month
+        "auto_create_schedule": True,
     }
 
     response = client.post("/api/tenants", headers=auth_headers, json=tenant_data)
@@ -1570,6 +1774,7 @@ def test_create_tenant_custom_window_days(
         "email": "customwindow@example.com",
         "move_in_date": date(2024, 1, 1).isoformat(),
         "payment_window_days": 10,  # 10 day window
+        "auto_create_schedule": True,
     }
 
     response = client.post("/api/tenants", headers=auth_headers, json=tenant_data)
