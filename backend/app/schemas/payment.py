@@ -90,10 +90,10 @@ class PaymentListResponse(BaseModel):
 class PaymentSummary(BaseModel):
     """Summary statistics for dashboard"""
 
-    total_expected: int = 0
-    total_received: int = 0
-    total_outstanding: int = 0
-    total_overdue: int = 0
+    total_expected: float = 0
+    total_received: float = 0
+    total_outstanding: float = 0
+    total_overdue: float = 0
     upcoming_count: int = 0
     pending_count: int = 0
     overdue_count: int = 0

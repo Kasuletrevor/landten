@@ -422,9 +422,10 @@ async def get_payment_summary(
     pending = 0
     overdue = 0
     paid_count = 0
-    total_expected = 0
-    total_received = 0
-    total_outstanding = 0
+    total_expected = 0.0
+    total_received = 0.0
+    total_outstanding = 0.0
+    total_overdue = 0.0
 
     for payment in payments:
         # Update status
@@ -434,23 +435,25 @@ async def get_payment_summary(
             payment.updated_at = datetime.now(timezone.utc)
             session.add(payment)
 
+        amount = payment.amount_due
+
         if payment.status == PaymentStatus.UPCOMING:
             upcoming += 1
-            total_expected += 1
-            total_outstanding += 1
+            total_expected += amount
+            total_outstanding += amount
         elif payment.status == PaymentStatus.PENDING:
             pending += 1
-            total_expected += 1
-            total_outstanding += 1
+            total_expected += amount
+            total_outstanding += amount
         elif payment.status == PaymentStatus.OVERDUE:
             overdue += 1
-            total_expected += 1
-            total_outstanding += 1
+            total_expected += amount
+            total_outstanding += amount
+            total_overdue += amount
         elif payment.status in [PaymentStatus.ON_TIME, PaymentStatus.LATE]:
             paid_count += 1
-            total_received += 1
-            if payment.status == PaymentStatus.LATE:
-                total_expected += 1
+            total_received += amount
+            total_expected += amount
 
     session.commit()
 
@@ -458,7 +461,7 @@ async def get_payment_summary(
         total_expected=total_expected,
         total_received=total_received,
         total_outstanding=total_outstanding,
-        total_overdue=overdue,
+        total_overdue=total_overdue,
         upcoming_count=upcoming,
         pending_count=pending,
         overdue_count=overdue,
