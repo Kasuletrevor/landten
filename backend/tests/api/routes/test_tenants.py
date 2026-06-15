@@ -322,7 +322,7 @@ def test_create_tenant_with_auto_schedule(
     ).first()
     assert schedule is not None
     assert schedule.amount == test_room.rent_amount
-    assert schedule.frequency == PaymentFrequency.MONTHLY
+    assert schedule.frequency == PaymentFrequency.BI_MONTHLY
 
     # Verify first payment was generated
     payment = session.exec(
@@ -330,6 +330,35 @@ def test_create_tenant_with_auto_schedule(
     ).first()
     assert payment is not None
     assert payment.amount_due == test_room.rent_amount
+
+
+def test_create_tenant_default_frequency_is_bi_monthly(
+    client: TestClient,
+    session: Session,
+    auth_landlord: Landlord,
+    auth_headers: dict,
+    test_property: Property,
+    test_room: Room,
+):
+    """Test that tenant schedule defaults to bi-monthly when not specified."""
+    from app.models.payment_schedule import PaymentSchedule
+
+    tenant_data = {
+        "room_id": test_room.id,
+        "name": "Default Frequency Tenant",
+        "email": "defaultfreq@example.com",
+        "move_in_date": date(2024, 1, 1).isoformat(),
+        "auto_create_schedule": True,
+    }
+
+    response = client.post("/api/tenants", headers=auth_headers, json=tenant_data)
+
+    assert response.status_code == 201
+    schedule = session.exec(
+        select(PaymentSchedule).where(PaymentSchedule.tenant_id == response.json()["id"])
+    ).first()
+    assert schedule is not None
+    assert schedule.frequency == PaymentFrequency.BI_MONTHLY
 
 
 def test_create_tenant_without_auto_schedule(
@@ -1085,6 +1114,87 @@ def test_create_tenant_schedule_not_found(client: TestClient, auth_headers: dict
         json=schedule_data,
     )
     assert response.status_code == 404
+
+
+def test_create_tenant_schedule_rejects_zero_window_days(
+    client: TestClient,
+    session: Session,
+    auth_landlord: Landlord,
+    auth_headers: dict,
+    test_room: Room,
+):
+    """Test that window_days must be at least 1."""
+    from tests.factories import TenantFactory
+
+    tenant = TenantFactory.create(session=session, room_id=test_room.id)
+
+    schedule_data = {
+        "amount": 1500000,
+        "frequency": "monthly",
+        "due_day": 1,
+        "window_days": 0,
+        "start_date": date(2024, 1, 1).isoformat(),
+    }
+
+    response = client.post(
+        f"/api/tenants/{tenant.id}/schedule", headers=auth_headers, json=schedule_data
+    )
+
+    assert response.status_code == 422
+
+
+def test_create_tenant_schedule_rejects_invalid_due_day(
+    client: TestClient,
+    session: Session,
+    auth_landlord: Landlord,
+    auth_headers: dict,
+    test_room: Room,
+):
+    """Test that due_day is constrained to 1-28."""
+    from tests.factories import TenantFactory
+
+    tenant = TenantFactory.create(session=session, room_id=test_room.id)
+
+    schedule_data = {
+        "amount": 1500000,
+        "frequency": "monthly",
+        "due_day": 31,
+        "window_days": 5,
+        "start_date": date(2024, 1, 1).isoformat(),
+    }
+
+    response = client.post(
+        f"/api/tenants/{tenant.id}/schedule", headers=auth_headers, json=schedule_data
+    )
+
+    assert response.status_code == 422
+
+
+def test_create_tenant_schedule_rejects_zero_amount(
+    client: TestClient,
+    session: Session,
+    auth_landlord: Landlord,
+    auth_headers: dict,
+    test_room: Room,
+):
+    """Test that schedule amount must be greater than 0."""
+    from tests.factories import TenantFactory
+
+    tenant = TenantFactory.create(session=session, room_id=test_room.id)
+
+    schedule_data = {
+        "amount": 0,
+        "frequency": "monthly",
+        "due_day": 1,
+        "window_days": 5,
+        "start_date": date(2024, 1, 1).isoformat(),
+    }
+
+    response = client.post(
+        f"/api/tenants/{tenant.id}/schedule", headers=auth_headers, json=schedule_data
+    )
+
+    assert response.status_code == 422
 
 
 def test_update_tenant_schedule_success(
