@@ -772,7 +772,10 @@ class TestWorkflow3DemoPath:
 
         # Step 4: Add tenant to the first room
         today = date.today()
-        move_in_date = today.replace(day=1)
+        # Use today as the move-in / schedule start so the generated payment's
+        # due date lands in the next billing period (future) and can be marked
+        # on time during the test run.
+        move_in_date = today
         tenant_response = client.post(
             "/api/tenants",
             headers=landlord_headers,
@@ -822,11 +825,14 @@ class TestWorkflow3DemoPath:
         assert payment["currency"] == "UGX"
 
         # Step 7: Mark payment paid with receipt reference
+        # Use the payment's due date as the paid date so it is recorded on time
+        # regardless of the current calendar day.
         mark_paid_response = client.put(
             f"/api/payments/{payment['id']}/mark-paid",
             headers=landlord_headers,
             json={
                 "payment_reference": "REF-DEMO-001",
+                "paid_date": payment["due_date"],
                 "notes": "Received via bank transfer",
             },
         )
