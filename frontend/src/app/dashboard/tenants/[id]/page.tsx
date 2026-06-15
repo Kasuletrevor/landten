@@ -240,7 +240,7 @@ export default function TenantDetailPage() {
                     {tenant.room?.name}
                   </span>
                   <span className="text-sm font-medium">
-                    {formatCurrency(tenant.room?.rent_amount || 0, tenant.room?.currency)}/mo
+                    {formatCurrency(tenant.room?.rent_amount || 0, tenant.room?.currency)}/period
                   </span>
                 </div>
               </Link>
