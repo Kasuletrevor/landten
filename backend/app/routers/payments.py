@@ -321,6 +321,8 @@ async def list_payments(
     status_filter: Optional[PaymentStatus] = Query(None, alias="status"),
     property_id: Optional[str] = None,
     tenant_id: Optional[str] = None,
+    start_date: Optional[date] = Query(None, description="Filter payments from this due date (inclusive)"),
+    end_date: Optional[date] = Query(None, description="Filter payments up to this due date (inclusive)"),
     current_landlord: Landlord = Depends(get_current_landlord),
     session: Session = Depends(get_session),
 ):
@@ -358,6 +360,11 @@ async def list_payments(
             ).all()
         ]
         query = query.where(Payment.tenant_id.in_(property_tenant_ids))
+
+    if start_date:
+        query = query.where(Payment.due_date >= start_date)
+    if end_date:
+        query = query.where(Payment.due_date <= end_date)
 
     payments = session.exec(query.order_by(Payment.due_date.desc())).all()
 
