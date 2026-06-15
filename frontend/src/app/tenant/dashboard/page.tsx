@@ -385,6 +385,7 @@ export default function TenantDashboardPage() {
       {uploadPayment && (
         <ReceiptUploadModal
           payment={uploadPayment}
+          currency={tenant?.room_currency}
           onClose={() => setUploadPayment(null)}
           onSuccess={(updatedPayment) => {
             setPayments(payments.map(p => p.id === updatedPayment.id ? updatedPayment : p));
@@ -544,11 +545,7 @@ function LeaseSection() {
             <div>
               <p className="text-sm text-[var(--text-muted)]">Rent Amount</p>
               <p className="font-medium">
-                {new Intl.NumberFormat("en-US", {
-                  style: "currency",
-                  currency: "USD",
-                  minimumFractionDigits: 0,
-                }).format(lease.rent_amount)}
+                {formatCurrency(lease.rent_amount, tenant?.room_currency)}
               </p>
             </div>
           )}
