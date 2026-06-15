@@ -24,7 +24,7 @@ class PaymentSchedule(SQLModel, table=True):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()), primary_key=True)
     tenant_id: str = Field(foreign_key="tenants.id", unique=True, index=True)
     amount: float  # Amount due each period
-    frequency: PaymentFrequency = Field(default=PaymentFrequency.MONTHLY)
+    frequency: PaymentFrequency = Field(default=PaymentFrequency.BI_MONTHLY)
     due_day: int = Field(default=1, ge=1, le=28)  # Day of month payment is due
     window_days: int = Field(
         default=5, ge=1
