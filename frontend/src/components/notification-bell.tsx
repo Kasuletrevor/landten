@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { Bell, Check, CheckCheck, ChevronRight, Loader2 } from "lucide-react";
 import api, { NotificationItem } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
@@ -60,8 +61,12 @@ export function NotificationBell() {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  const [dropdownStyle, setDropdownStyle] = useState({ top: 0, right: 0 });
   const dropdownRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => setMounted(true), []);
 
   const fetchNotifications = useCallback(async () => {
     if (!isAuthenticated) return;
@@ -98,6 +103,27 @@ export function NotificationBell() {
       console.error("Failed to mark all notifications as read:", error);
     }
   };
+
+  const updatePosition = useCallback(() => {
+    if (!buttonRef.current) return;
+    const rect = buttonRef.current.getBoundingClientRect();
+    setDropdownStyle({
+      top: rect.bottom + 8,
+      right: window.innerWidth - rect.right,
+    });
+  }, []);
+
+  useEffect(() => {
+    if (isOpen) {
+      updatePosition();
+    }
+  }, [isOpen, updatePosition]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    window.addEventListener("resize", updatePosition);
+    return () => window.removeEventListener("resize", updatePosition);
+  }, [isOpen, updatePosition]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -159,11 +185,11 @@ export function NotificationBell() {
       </button>
 
       {/* Dropdown Panel */}
-      {isOpen && (
+      {mounted && isOpen && createPortal(
         <div
           ref={dropdownRef}
-          className="absolute right-0 top-full mt-2 w-[380px] bg-[var(--surface)] rounded-2xl shadow-[var(--shadow-xl)] border border-[var(--border)] overflow-hidden animate-slide-down"
-          style={{ animationDuration: "0.25s" }}
+          className="fixed z-[60] w-[min(380px,calc(100vw-2rem))] bg-[var(--surface)] rounded-2xl shadow-[var(--shadow-xl)] border border-[var(--border)] overflow-hidden animate-slide-down"
+          style={{ ...dropdownStyle, animationDuration: "0.25s" }}
         >
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border)] bg-[var(--surface-inset)]">
@@ -278,7 +304,8 @@ export function NotificationBell() {
               Powered by SSE
             </span>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
