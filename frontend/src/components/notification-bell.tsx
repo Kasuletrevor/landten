@@ -107,9 +107,14 @@ export function NotificationBell() {
   const updatePosition = useCallback(() => {
     if (!buttonRef.current) return;
     const rect = buttonRef.current.getBoundingClientRect();
+    const viewportWidth = window.innerWidth;
+    const dropdownWidth = Math.min(380, viewportWidth - 32); // 1rem padding each side
+    let right = viewportWidth - rect.right;
+    right = Math.max(16, right); // keep right edge at least 1rem from viewport
+    right = Math.min(right, viewportWidth - 16 - dropdownWidth); // keep left edge at least 1rem from viewport
     setDropdownStyle({
       top: rect.bottom + 8,
-      right: window.innerWidth - rect.right,
+      right,
     });
   }, []);
 
