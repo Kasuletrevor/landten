@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import api, {
   MaintenanceCategory,
   MaintenanceRequest,
@@ -73,6 +74,9 @@ export default function TenantMaintenanceSection() {
   const [resolveOpen, setResolveOpen] = useState(false);
   const [resolveRating, setResolveRating] = useState("");
   const [resolveFeedback, setResolveFeedback] = useState("");
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => setMounted(true), []);
 
   const [form, setForm] = useState({
     category: "other" as MaintenanceCategory,
@@ -337,7 +341,7 @@ export default function TenantMaintenanceSection() {
         )}
       </div>
 
-      {isCreateModalOpen && (
+      {mounted && isCreateModalOpen && createPortal(
         <div className="modal-overlay" onClick={closeCreateModal}>
           <div className="modal max-w-2xl" onClick={(event) => event.stopPropagation()}>
             <div className="modal-header flex items-center justify-between">
@@ -473,10 +477,11 @@ export default function TenantMaintenanceSection() {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
-      {(selectedRequest || isDetailLoading) && (
+      {mounted && (selectedRequest || isDetailLoading) && createPortal(
         <div className="modal-overlay" onClick={() => setSelectedRequest(null)}>
           <div className="modal max-w-3xl" onClick={(event) => event.stopPropagation()}>
             <div className="modal-header flex items-center justify-between">
@@ -718,7 +723,8 @@ export default function TenantMaintenanceSection() {
               )}
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </section>
   );
